@@ -60,6 +60,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 WIN = os.name == "nt"
+ARM64 = platform.machine().lower() in ("aarch64", "arm64")   # e.g. NVIDIA GB10 (DGX Spark): no AVX, one memory for CPU and GPU
 # #214: every Hugging Face file comes from a fixed commit of its repository (the `sha` of
 # https://huggingface.co/api/models/<repo> when this was pinned), so a checkout installs the same files on any
 # day.  A revision the repository no longer has falls back to its current files, with a message (download()).
@@ -714,6 +715,10 @@ def cpu_info():
         n = out(["powershell", "-NoProfile", "-Command", "(Get-CimInstance Win32_Processor).Name"]).strip()
         name = n or name
         avx512 = bool(pf(41)) and _cpuid_avx512_full()
+    elif ARM64:                                        # NEON is the baseline of every Arm64 CPU; no AVX-512 kernels
+        avx2 = True
+        m = re.search(r"^Model name:\s*(.*)$", out(["lscpu"]), re.M)
+        name = (m.group(1).strip() if m else name) + " (Arm64, NEON)"
     else:
         try:
             txt = open("/proc/cpuinfo").read()
@@ -839,8 +844,10 @@ def gpus():
     for line in s.strip().splitlines():
         try:
             idx, name, mem, cc, drv = [x.strip() for x in line.split(",")]
-            found.append({"index": int(idx), "name": name, "vram_gb": float(mem) / 1024.0, "arch": cc.replace(".", ""),
-                          "driver": drv})
+            unified = not mem.replace(".", "").isdigit()      # "[N/A]": the GPU shares the system's memory (GB10)
+            vram = unified_vram_gb() if unified else float(mem) / 1024.0
+            found.append({"index": int(idx), "name": name, "vram_gb": vram, "arch": cc.replace(".", ""),
+                          "driver": drv, **({"unified": True} if unified else {})})
         except ValueError:
             continue
     return found
@@ -904,6 +911,13 @@ def pcie_lines(link: dict) -> tuple[str, str | None]:
                      "narrow it when idle); if it stays narrow under load: is it in the right slot (the one wired "
                      "x16), fully seated, and not sharing lanes with an M.2 drive? (the BIOS can say)")
     return line, warn_line
+
+
+def unified_vram_gb() -> float:
+    """A GPU that reports no memory size of its own (NVIDIA GB10 / DGX Spark: CPU and GPU share one pool): the part of
+    that pool counted as VRAM.  A quarter of the RAM, at most 32 GB - the experts live in RAM as well, and the same
+    bytes must not be counted twice."""
+    return min(ram_gb() / 4, 32.0)
 
 
 GPU_PICK = None                                         # --gpu N (issue #51); None: the card with the most VRAM
@@ -5118,7 +5132,7 @@ def main() -> int:
     pf = page_file_gb()
     if pf is not None and pf < 4:
         warn(page_file_advice(pf, page_file_setting()))
-    ok(f"CPU: {cpu} ({'AVX-512' if avx512 else 'AVX2' if avx2 else 'no AVX2'})")
+    ok(f"CPU: {cpu} ({'AVX-512' if avx512 else 'NEON' if ARM64 else 'AVX2' if avx2 else 'no AVX2'})")
     link = None if hip else pcie_link(int(gpu.get("index", 0)))
     if link is not None:
         line, problem = pcie_lines(link)
@@ -5443,8 +5457,9 @@ def main() -> int:
         gpu = hip_card(eng, gpu, amd)
         a.gpu = gpu["index"] if gpu["count"] > 1 else a.gpu
     else:
-        eng = None if a.build or hip else get_prebuilt(a.prebuilt, gpu, vision, **({"toolkit": 12} if cuda_tk == 12
-                                                                                    else {}))
+        eng = None if a.build or hip or ARM64 else get_prebuilt(   # no ready-made Arm64 engine
+            a.prebuilt, gpu, vision, **({"toolkit": 12} if cuda_tk == 12
+                                                else {}))
     if eng is not None and not hip and json.loads((eng / "BUILD.json").read_text(encoding="utf-8")).get("source") != "local":
         pip_cuda_libs(cuda_tk)
         if vision != "none" and not (eng / VEXE).exists():
