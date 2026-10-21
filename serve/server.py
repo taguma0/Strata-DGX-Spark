@@ -3587,9 +3587,23 @@ class Server(ThreadingHTTPServer):
     # either one (a forgotten second start of run-<model>.bat).  Without it the second start fails loudly instead.
     allow_reuse_address = os.name != "nt"
 
+    def server_bind(self):
+        # "::" listens for IPv4 peers too: Windows binds an AF_INET6 socket v6-only by default (Linux honours
+        # bindv6only=0 and serves both); clearing the flag makes a dual-stack listen the same on both, with the
+        # IPv4 peers arriving as ::ffff:192.168.x.x.
+        if self.address_family == socket.AF_INET6 and hasattr(socket, "IPV6_V6ONLY"):
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        super().server_bind()
+
     def handle_error(self, request, client_address):
         if not isinstance(sys.exc_info()[1], ConnectionError):   # a client that hangs up needs no stack trace
             super().handle_error(request, client_address)
+
+
+class ServerV6(Server):
+    """The same server on the IPv6 family: TCPServer.__init__ builds the socket from address_family, so the family
+    must be on the class, not set after construction.  "::" serves IPv4 too (server_bind clears V6ONLY)."""
+    address_family = socket.AF_INET6
 
 
 def warn_tight_ram(arena_mib) -> None:
@@ -3661,6 +3675,20 @@ def lan_addresses() -> list[str]:
     return ([first] if ok(first) else []) + sorted(ip for ip in ips if ok(ip) and ip != first)
 
 
+def lan_addresses_v6() -> list[str]:
+    """This PC's global IPv6 addresses (not loopback, not link-local fe80::/8, not the ::ffff IPv4 forms) - for
+    the "from other devices" line when listening on "::"."""
+    ips = set()
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET6):
+            ip = info[4][0].split("%", 1)[0]                     # a %scope is a per-interface suffix, not the name
+            if not ip.startswith(("::1", "::ffff:", "fe80", "::")):
+                ips.add(ip)
+    except OSError:
+        pass
+    return sorted(ips)
+
+
 def host_name(value) -> str:
     """The name in a Host header (or an origin's host[:port]): "Example.com:8080" -> "example.com",
     "[::1]:8095" -> "::1"; "" when it is malformed."""
@@ -3676,6 +3704,11 @@ def host_name(value) -> str:
         return v
     v = v.rstrip(".")
     return v if v and all(c.isalnum() or c in "-._" for c in v) else ""
+
+
+def url_host(host: str) -> str:
+    """A host as it goes in a URL: IPv6 needs brackets ("::1" -> "[::1]")."""
+    return f"[{host}]" if ":" in host else host
 
 
 def _is_ip(name: str) -> bool:
@@ -3768,9 +3801,19 @@ def origin_allowed(origin: str, host, names, origins=()) -> bool:
 
 
 def serve(svc: Service, host="127.0.0.1", port=8095) -> ThreadingHTTPServer:
+    """host is IPv4 ("127.0.0.1", "0.0.0.0", a LAN address) or IPv6 ("::1", "::", an address): an address with a
+    colon binds the IPv6 family, and "::" serves IPv4 too (Server.server_bind clears V6ONLY)."""
     svc.host_names = host_names_for(host, svc.allowed_hosts, svc.trusted_origins)
     svc.start_telemetry()
-    httpd = Server((host, port), make_handler(svc))
+    v6 = ":" in host
+    if v6 and not socket.has_ipv6:
+        raise SystemExit("[strata] this PC has no IPv6: start with --host 0.0.0.0 (or 127.0.0.1) instead")
+    try:
+        httpd = (ServerV6 if v6 else Server)((host, port), make_handler(svc))
+    except OSError as e:
+        raise SystemExit(f"[strata] cannot listen on {host}:{port}: {e}"
+                         + (" (IPv6 is off on this PC: start with --host 0.0.0.0)" if v6 else
+                            " (is the port already in use? run-<model>.bat started twice?)")) from e
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
 
@@ -3902,7 +3945,8 @@ def main() -> int:
                                      "written by setup.py")
     ap.add_argument("--host", default=None,
                     help="the address to listen on: 127.0.0.1 = this PC only (the default), 0.0.0.0 = also other devices "
-                         "on your network (set an API key); also \"host\" in the config")
+                         "on your network (set an API key), \"::\" = IPv6 on every address (IPv4 too), \"::1\" = IPv6 "
+                         "loopback only; also \"host\" in the config")
     ap.add_argument("--script", action="append",
                     help="the mock engine's answer (default: a short greeting); given more than once, requests get "
                          "them in turn and the last one repeats")
@@ -3939,9 +3983,10 @@ def main() -> int:
         cfg["gpu"] = int(a.gpu) if a.gpu.strip().isdigit() else a.gpu
     a.host = a.host or cfg.get("host") or "127.0.0.1"   # issue #26: the run scripts pass no --host, the config can
     try:                                                # before the minutes of loading: is the port free?
-        Server((a.host, a.port), BaseHTTPRequestHandler).server_close()
-    except OSError:
-        ap.error(f"port {a.port} is already in use - is Strata (or another server) already running? "
+        (ServerV6 if ":" in a.host else Server)((a.host, a.port), BaseHTTPRequestHandler).server_close()
+    except OSError as e:
+        ap.error(f"port {a.port} is already in use" + ("" if ":" not in a.host else f" (IPv6 is off: {e})")
+                 + " - is Strata (or another server) already running? "
                  f"Close it, or start this one with a different --port")
     if cfg.get("tokenizer"):
         a.tokenizer = cfg["tokenizer"]
@@ -4093,15 +4138,19 @@ def main() -> int:
     httpd = serve(svc, host=a.host, port=a.port)
     svc.start_idle_unload()
     here = "127.0.0.1" if a.host in ("0.0.0.0", "", "::") else a.host
-    print(f"ready: http://{here}:{a.port}/v1  (OpenAI: /v1/chat/completions, Anthropic: /v1/messages, "
+    print(f"ready: http://{url_host(here)}:{a.port}/v1  (OpenAI: /v1/chat/completions, Anthropic: /v1/messages, "
           f"context {engine.max_context} tokens{', images on' if vision else ''}"
           f"{', API key required' if svc.api_key else ''})", flush=True)
-    print(f"       open http://{here}:{a.port}/ in a browser to chat; close this window to stop the model", flush=True)
+    print(f"       open http://{url_host(here)}:{a.port}/ in a browser to chat; close this window to stop the model",
+          flush=True)
     if a.host not in ("127.0.0.1", "localhost", "::1"):
         # issue #26: reachable from other devices - say at which address, and what can still block it
         ips = lan_addresses()
+        if a.host == "::":
+            ips = ips + lan_addresses_v6()
         for ip in ips:
-            print(f"       from other devices: http://{ip}:{a.port}/   (API: http://{ip}:{a.port}/v1)", flush=True)
+            print(f"       from other devices: http://{url_host(ip)}:{a.port}/   "
+                  f"(API: http://{url_host(ip)}:{a.port}/v1)", flush=True)
         if not ips:
             print("       from other devices: http://<this PC's IP address>:" + str(a.port) + "/", flush=True)
         if not svc.api_key:
@@ -4114,7 +4163,7 @@ def main() -> int:
                   "       (and set this network to Private in Windows' network settings)", flush=True)
     if a.open and cfg.get("open_browser") is not False:   # #609: the config's "open_browser": false wins (an older
         import webbrowser                                  # run-<model>.bat still passes --open)
-        webbrowser.open(f"http://{'127.0.0.1' if a.host in ('0.0.0.0', '') else a.host}:{a.port}/")
+        webbrowser.open(f"http://{url_host('127.0.0.1' if a.host in ('0.0.0.0', '', '::') else a.host)}:{a.port}/")
     # #96: docker stop sends SIGTERM, which Python ignores by default, so the container's PID 1 would be killed after
     # the grace period with the engine still running. SIGTERM takes Ctrl+C's path below (QUIT to the engine).
     # SIGINT keeps Python's own handler, so Ctrl+C and a second Ctrl+C work as before.

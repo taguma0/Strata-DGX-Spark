@@ -8,6 +8,7 @@ import contextlib
 import io
 import json
 import os
+import socket
 import sys
 import tempfile
 import threading
@@ -2679,6 +2680,50 @@ class LostStep(unittest.TestCase):
 
     def test_stop_never_acknowledged(self):
         self.run_mode("stop", stream=False)
+
+
+class IPv6(unittest.TestCase):
+    """--host ::1 and :: bind the IPv6 family (serve() picks AF_INET6 on a colon); "::" serves IPv4 too
+    (Server.server_bind clears V6ONLY; on a v6-only kernel the dual-stack test skips)."""
+
+    @classmethod
+    def setUpClass(cls):
+        if not socket.has_ipv6:
+            raise unittest.SkipTest("no IPv6 on this PC")
+        tok = ByteTokenizer()
+        cls.engine = MockEngine(tok, "ok", max_context=CTX)
+        cls.svc = Service(cls.engine, tok, ChatTemplate(ROOT / "serve/chat_template.jinja"))
+        cls.httpd = serve(cls.svc, host="::1", port=0)
+        cls.port = cls.httpd.server_address[1]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+
+    def test_v6_loopback_answers(self):
+        with urllib.request.urlopen(f"http://[::1]:{self.port}/status", timeout=10) as r:
+            self.assertEqual(r.status, 200)
+
+    def test_dual_stack_ipv4(self):
+        httpd = serve(self.svc, host="::", port=0)
+        try:
+            port = httpd.server_address[1]
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/status", timeout=10) as r:
+                    self.assertEqual(r.status, 200)
+            except OSError:
+                self.skipTest("this kernel binds :: v6-only; IPv4 needs 0.0.0.0")
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+
+    def test_url_host_brackets(self):
+        from serve.server import url_host
+        self.assertEqual(url_host("::1"), "[::1]")
+        self.assertEqual(url_host("2001:db8::1"), "[2001:db8::1]")
+        self.assertEqual(url_host("127.0.0.1"), "127.0.0.1")
+        self.assertEqual(url_host("example.com"), "example.com")
 
 
 if __name__ == "__main__":
