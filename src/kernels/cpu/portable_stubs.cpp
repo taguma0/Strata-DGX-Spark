@@ -6,6 +6,7 @@
 // portable form (the canonical Q2_0 pack's VNNI kernel, the multi-token i-quant kernels) refuses by name instead of
 // computing something else.
 #include "strata/kernels/cpu/expert.hpp"
+#include "strata/kernels/cpu/iq_avx1.hpp"
 #include "strata/kernels/cpu/iq_avx2.hpp"
 #include "strata/kernels/cpu/iq_avx512.hpp"
 #include "strata/kernels/cpu/kq_avx1.hpp"
@@ -218,5 +219,38 @@ void act_quant_q8_1_avx2(const float* x, int n, ActQ& a) {
         a.hx[k] = s * (float) sum;
     }
 }
+
+
+// ---- v0.1.43 additions: the AVX-1 rung (issue #1699) and the IQ AVX-1 kernels ----
+// On Arm64 cpu_avx512_ok() and cpu_avx2_ok() are false, so q2_rows_any, q2_rows_any_legacy, and
+// act_quant_any dispatch to the avx1 rungs at runtime; they delegate to the NEON stand-ins above
+// (same arithmetic).  The IQ AVX-1 kernels and the Q8_K quantizers are never selected here -
+// native_expert.cpp reaches ggml-cpu's NEON dots when the "supported" probes say no - so they
+// refuse by name.
+
+void q2_0_gguf_rows_multi_avx1(const uint8_t* w, size_t row_bytes, int nblocks, const ActQ* const* a, int nt,
+                               float* const* out, int r0, int r1) {
+    q2_0_gguf_rows_multi_avx2(w, row_bytes, nblocks, a, nt, out, r0, r1);
+}
+void q2_0_gguf_rows_multi_avx1_legacy(const uint8_t* w, size_t row_bytes, int nblocks, const ActQ* const* a, int nt,
+                                      float* const* out, int r0, int r1) {
+    q2_0_gguf_rows_multi_avx2(w, row_bytes, nblocks, a, nt, out, r0, r1);
+}
+void q2_0_gguf_rows_multi_avx2_legacy(const uint8_t* w, size_t row_bytes, int nblocks, const ActQ* const* a, int nt,
+                                      float* const* out, int r0, int r1) {
+    q2_0_gguf_rows_multi_avx2(w, row_bytes, nblocks, a, nt, out, r0, r1);
+}
+void act_quant_q8_1_avx1(const float* x, int n, ActQ& a) { act_quant_q8_1_avx2(x, n, a); }
+
+bool iq128_supported(int) noexcept { return false; }
+void iq128_gu_rows(int, const uint8_t*, size_t, size_t, int, const void* const*, int, float* const*, int, int) {
+    x86_only("the IQ AVX-1 gate/up kernel");
+}
+bool iq128_down_supported(int) noexcept { return false; }
+void iq128_down_rows(int, const uint8_t*, size_t, int, const void* const*, int, float* const*, int, int) {
+    x86_only("the IQ AVX-1 down kernel");
+}
+void q8k_quant_avx1(const float*, void*, int64_t) { x86_only("the Q8_K quantizer"); }
+void q8k_quant_avx2(const float*, void*, int64_t) { x86_only("the Q8_K quantizer"); }
 
 }  // namespace strata::kernels::cpu
