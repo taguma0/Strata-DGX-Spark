@@ -2529,7 +2529,7 @@ void Verifier::stage_inputs(int T, const int32_t* tokens, int64_t pos0) {
     if (herr_h_ != nullptr) *(volatile uint32_t*) herr_h_ = 0;
     if (hdrop_h_ != nullptr) *(volatile uint32_t*) hdrop_h_ = (g_test_drop > 0 && windows + 1 == g_test_drop) ? 1u : 0u;
     std::atomic_thread_fence(std::memory_order_seq_cst);
-    _mm_sfence();
+    store_fence();  // portable: cpu_relax.hpp (fork, Arm64)
     last_t_ = T;
     last_pos0_ = pos0;
     for (int t = 0; t < T; ++t) last_tokens_[t] = tokens[t];
