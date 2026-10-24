@@ -2760,7 +2760,7 @@ bool Verifier::run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool,
             const Clock::time_point tp = Clock::now();
             if (!ss.ple.table->gather_batch(ple_rows, (size_t) T, h_ple_, err)) return false;
             std::atomic_thread_fence(std::memory_order_seq_cst);
-            _mm_sfence();
+            store_fence();  // portable: cpu_relax.hpp (fork, Arm64)
             ms_host += ms_since(tp);
         }
         *(volatile uint32_t*) h_flag_ = 1;
