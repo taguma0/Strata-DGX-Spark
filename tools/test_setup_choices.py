@@ -348,7 +348,7 @@ class HipVision(unittest.TestCase):
                 (bdir / "bin").mkdir(parents=True)
                 (bdir / "bin" / setup.VEXE).write_bytes(b"vision")
 
-            with mock.patch.object(setup, "ROOT", root), mock.patch.object(setup, "cmake_build", cmake_build), \
+            with mock.patch.object(setup, "cpu_info", lambda: ("Test CPU", True, False)), mock.patch.object(setup, "ROOT", root), mock.patch.object(setup, "cmake_build", cmake_build), \
                     mock.patch.object(setup, "source_hash", lambda paths: vsrc if paths == setup.VISION_SOURCES else src):
                 quiet(setup.build_engine_hip, {"arch": "gfx1201"}, "llama", vision)
             return built, json.loads((eng / "BUILD.json").read_text()), (eng / setup.VEXE).exists()
@@ -541,7 +541,7 @@ class CudaVision(unittest.TestCase):
                     (bdir / "bin").mkdir(parents=True)
                     (bdir / "bin" / setup.VEXE).write_bytes(b"vision")
 
-                with mock.patch.object(setup, "ROOT", root), mock.patch.object(setup, "cmake_build", cmake_build), \
+                with mock.patch.object(setup, "cpu_info", lambda: ("Test CPU", True, False)), mock.patch.object(setup, "ROOT", root), mock.patch.object(setup, "cmake_build", cmake_build), \
                         mock.patch.object(setup, "source_hash", lambda p: "V" if p == setup.VISION_SOURCES else "S"), \
                         mock.patch.object(setup, "install_build_tools", lambda gpu, yes: (str(root / "nvcc"), None)), \
                         mock.patch.object(setup, "source_version", lambda: "test"):
@@ -603,7 +603,7 @@ class HostCompilers(unittest.TestCase):
                 (bdir / setup.EXE).write_bytes(b"engine")
 
             env = {"CC": "gcc-14", "CXX": "g++-14", "CUDAHOSTCXX": ""}
-            with mock.patch.dict(os.environ, env), mock.patch.object(setup, "ROOT", root), \
+            with mock.patch.dict(os.environ, env), mock.patch.object(setup, "cpu_info", lambda: ("Test CPU", True, False)), mock.patch.object(setup, "ROOT", root), \
                     mock.patch.object(setup, "cmake_build", cmake_build), \
                     mock.patch.object(setup, "source_hash", lambda p: "V" if p == setup.VISION_SOURCES else "new"), \
                     mock.patch.object(setup, "install_build_tools", lambda gpu, yes: (str(root / "nvcc"), None)), \
