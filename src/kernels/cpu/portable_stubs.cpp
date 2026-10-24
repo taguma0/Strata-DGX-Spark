@@ -283,6 +283,7 @@ void nvfp4_256_rows(const uint8_t*, size_t, int, const void* const*, int, float*
 // trellis type, ggml-cpu's vec_dot runs the expert), the row kernels refuse by name.  tq_cpu_parity links the same
 // entry points; it reports and skips on this host, as on a CPU without the trellis packs.
 bool tq_supported(int) noexcept { return false; }
+int tq_kbits(int) noexcept { return 0; }   // the inline tq_block_bytes in the header calls this; the probes gate it off
 TqIsa tq_isa() { return TqIsa::scalar; }
 bool tq_isa_ok(TqIsa isa) { return isa == TqIsa::scalar; }
 bool tq_kernels_enabled() { return false; }
