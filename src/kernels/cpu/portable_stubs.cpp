@@ -13,6 +13,7 @@
 #include "strata/kernels/cpu/kq_avx2.hpp"
 #include "strata/kernels/cpu/nvfp4_avx2.hpp"
 #include "strata/kernels/cpu/nvfp4_avx512.hpp"
+#include "strata/kernels/cpu/tq_cpu.hpp"
 
 #include <arm_neon.h>
 
@@ -275,6 +276,22 @@ void nvfp4_256_gu_rows(const uint8_t*, size_t, size_t, int, const void* const*, 
 }
 void nvfp4_256_rows(const uint8_t*, size_t, int, const void* const*, int, float* const*, int, int, float) {
     x86_only("the NVFP4 AVX-2 row kernel");
+}
+
+// 0.2.1: the trellis (TQ) expert rows (tq_cpu.cpp / tq_avx2.cpp / tq_avx512.cpp).  native_expert.cpp reaches them
+// behind the tq_supported() / tq_kernels_enabled() probes: on Arm64 the probes say no (upstream ggml here has no
+// trellis type, ggml-cpu's vec_dot runs the expert), the row kernels refuse by name.  tq_cpu_parity links the same
+// entry points; it reports and skips on this host, as on a CPU without the trellis packs.
+bool tq_supported(int) noexcept { return false; }
+TqIsa tq_isa() { return TqIsa::scalar; }
+bool tq_isa_ok(TqIsa isa) { return isa == TqIsa::scalar; }
+bool tq_kernels_enabled() { return false; }
+const char* tq_isa_name(TqIsa isa) { return isa == TqIsa::scalar ? "scalar" : (isa == TqIsa::avx2 ? "avx2" : "avx512"); }
+void tq_rows(TqIsa, int, const uint8_t*, size_t, int, const void* const*, int, float* const*, int, int) {
+    x86_only("the trellis (TQ) row kernel");
+}
+void tq_gu_rows(TqIsa, int, const uint8_t*, size_t, size_t, int, const void* const*, int, float* const*, int, int) {
+    x86_only("the trellis (TQ) gate/up kernel");
 }
 
 }  // namespace strata::kernels::cpu
