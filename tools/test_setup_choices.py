@@ -609,6 +609,7 @@ class HostCompilers(unittest.TestCase):
                     mock.patch.object(setup, "cmake_build", cmake_build), \
                     mock.patch.object(setup, "source_hash", lambda p: "V" if p == setup.VISION_SOURCES else "new"), \
                     mock.patch.object(setup, "install_build_tools", lambda gpu, yes: (str(root / "nvcc"), None)), \
+                    mock.patch.object(setup, "cpu_info", lambda: ("Test CPU", True, False)), \
                     mock.patch.object(setup, "source_version", lambda: "test"):
                 quiet(setup.build_engine, {"arch": "86"}, "gpu", True, "llama")
         for target, defs in built:
