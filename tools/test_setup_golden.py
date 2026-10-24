@@ -163,6 +163,11 @@ class Golden(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
+        if not setup.WIN:  # DGX Spark fork: the 0.1.44 golden configs of the Unsloth UD-Q4_K_XL scenarios were
+            for g in cls.golden.values():  # recorded on Windows: on this Linux host the vision exe has no .exe
+                v = g.get("config", {}).get("vision")
+                if v and isinstance(v.get("exe"), str) and v["exe"].endswith(".exe"):
+                    v["exe"] = v["exe"][:-4]
 
     def cases(self):
         for prof, (ram, found) in PROFILES.items():
