@@ -1597,10 +1597,12 @@ if(STRATA_NATIVE_EXPERTS)
     target_link_libraries(hip_ple_iq4 PRIVATE strata_kernels strata_hip_runtime ggml-base)
   endif()
   # the NVFP4 AVX-512 and AVX2 rows vs ggml-cpu's vec_dot, and their speed (CPU only; optional arg: a pack's experts.bin)
-  add_executable(nvfp4_avx512_parity src/kernels/cpu/nvfp4_avx512_parity.cpp)
-  target_link_libraries(nvfp4_avx512_parity PRIVATE strata_kernels_cpu)
-  add_test(NAME nvfp4_cpu_parity COMMAND nvfp4_avx512_parity)   # random blocks; the AVX2 rows bit-equal to ggml's
-  set_tests_properties(nvfp4_cpu_parity PROPERTIES TIMEOUT 120)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64|x86_64|x64|X86")   # DGX Spark fork: the harness links the x86-only nvfp4 rows
+    add_executable(nvfp4_avx512_parity src/kernels/cpu/nvfp4_avx512_parity.cpp)
+    target_link_libraries(nvfp4_avx512_parity PRIVATE strata_kernels_cpu)
+    add_test(NAME nvfp4_cpu_parity COMMAND nvfp4_avx512_parity)   # random blocks; the AVX2 rows bit-equal to ggml's
+    set_tests_properties(nvfp4_cpu_parity PROPERTIES TIMEOUT 120)
+  endif()
   if(STRATA_ENABLE_CUDA)   # the NVFP4 decode kernels vs ggml's reference
     add_executable(nvfp4_expert_gpu_parity src/kernels/nvfp4_expert_gpu_parity.cpp)
     target_link_libraries(nvfp4_expert_gpu_parity PRIVATE strata_kernels ggml-base CUDA::cudart)
