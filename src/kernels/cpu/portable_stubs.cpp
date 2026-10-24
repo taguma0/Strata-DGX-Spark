@@ -6,6 +6,7 @@
 // portable form (the canonical Q2_0 pack's VNNI kernel, the multi-token i-quant kernels) refuses by name instead of
 // computing something else.
 #include "strata/kernels/cpu/expert.hpp"
+#include "strata/kernels/cpu/iq_avx1.hpp"
 #include "strata/kernels/cpu/iq_avx2.hpp"
 #include "strata/kernels/cpu/iq_avx512.hpp"
 #include "strata/kernels/cpu/kq_avx1.hpp"
@@ -40,6 +41,14 @@ inline float bf16_to_f32(uint16_t b) {
 }  // namespace
 
 // ---- the i-quant multi-token kernels: none; native_expert.cpp falls back to ggml-cpu's vec_dot
+bool iq128_supported(int) noexcept { return false; }
+void iq128_gu_rows(int, const uint8_t*, size_t, size_t, int, const void* const*, int, float* const*, int, int) {
+    x86_only("the AVX1 i-quant kernel");
+}
+bool iq128_down_supported(int) noexcept { return false; }
+void iq128_down_rows(int, const uint8_t*, size_t, int, const void* const*, int, float* const*, int, int) {
+    x86_only("the AVX1 i-quant down kernel");
+}
 bool iq512_supported(int) noexcept { return false; }
 void iq512_gu_rows(int, const uint8_t*, size_t, size_t, int, const void* const*, int, float* const*, int, int) {
     x86_only("the AVX-512 i-quant kernel");
@@ -99,6 +108,7 @@ bool expert_oracle_q8_0_enabled() { return false; }
 
 // #795/#152: native_expert.cpp asks these; on Arm64 no AVX-2 gather kernel exists, so ggml's dots run.
 void q8k_quant_avx2(const float*, void*, int64_t) { std::abort(); }  // unreachable: q8k_avx2() checks cpu_avx2_ok()
+void q8k_quant_avx1(const float*, void*, int64_t) { std::abort(); }  // unreachable: q8k_avx1() checks cpu_avx1_ok()
 int iq256_gather_setting() { return -1; }
 bool cpu_gather_fast() { return false; }
 // Called for every layer even with a native pack, whose kernels never read this ActQ (expert_source.cpp): a no-op here.
@@ -186,6 +196,12 @@ void rows(const uint8_t* w, size_t row_bytes, int nblocks, const ActQ* const* a,
 
 }  // namespace
 
+// The pre-bit-plane AVX-2 kernel (kept upstream for A/B and parity): called only behind cpu_avx2_ok(),
+// so on Arm64 it refuses by name.
+void q2_0_gguf_rows_multi_avx2_legacy(const uint8_t*, size_t, int, const ActQ* const*, int, float* const*, int,
+                                      int) {
+    x86_only("the Q2_0 AVX-2 (pre-bit-plane) kernel");
+}
 void q2_0_gguf_rows_multi_avx2(const uint8_t* w, size_t row_bytes, int nblocks, const ActQ* const* a, int nt,
                                float* const* out, int r0, int r1) {
     switch (nt) {
