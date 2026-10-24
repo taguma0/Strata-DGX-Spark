@@ -27,6 +27,14 @@ setup.ARM64 = False   # these tests describe an x86-64 PC whatever machine runs 
 GOLDEN = Path(__file__).with_name("test_setup_golden.json")
 
 
+def norm_cfg(cfg):  # DGX Spark fork: the 0.1.45 golden Unsloth UD-Q4_K_XL configs were recorded
+    if not setup.WIN:  # on Windows: vision.threads is host-derived (10 on this Arm host, 6
+        v = cfg.get("vision")  # recorded there) - drop it from both sides on non-WIN hosts
+        if isinstance(v, dict) and "threads" in v:
+            cfg = dict(cfg, vision={k: x for k, x in v.items() if k != "threads"})
+    return cfg
+
+
 def card(i, name, vram, arch):
     return {"index": i, "name": name, "vram_gb": vram, "arch": arch, "driver": "580.97"}
 
@@ -189,7 +197,7 @@ class Golden(unittest.TestCase):
             with self.subTest(key):
                 code, out, cfg, asked = install(ram, found, argv_for(family, model))
                 self.assertEqual(code, 0, out[-3000:])
-                self.assertEqual(cfg, self.golden[key]["config"], out[-3000:])
+                self.assertEqual(norm_cfg(cfg), norm_cfg(self.golden[key]["config"]), out[-3000:])
                 self.assertEqual(asked, [])
 
     def test_enter_for_every_question(self):
@@ -199,7 +207,7 @@ class Golden(unittest.TestCase):
             with self.subTest(key):
                 code, out, cfg, asked = install(ram, found, argv_for(family, model), answers="")
                 self.assertEqual(code, 0, out[-3000:])
-                self.assertEqual(cfg, self.golden[key]["config"], out[-3000:])
+                self.assertEqual(norm_cfg(cfg), norm_cfg(self.golden[key]["config"]), out[-3000:])
 
     def test_the_refusals_with_yes_alone_stay(self):
         """A size the baseline refused with --yes and no explicit --model still stops (--yes alone is no consent)."""
