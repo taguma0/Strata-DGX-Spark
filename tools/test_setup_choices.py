@@ -534,7 +534,8 @@ class CudaVision(unittest.TestCase):
                 with mock.patch.object(setup, "ROOT", root), mock.patch.object(setup, "cmake_build", cmake_build), \
                         mock.patch.object(setup, "source_hash", lambda p: "V" if p == setup.VISION_SOURCES else "S"), \
                         mock.patch.object(setup, "install_build_tools", lambda gpu, yes: (str(root / "nvcc"), None)), \
-                        mock.patch.object(setup, "source_version", lambda: "test"):
+                        mock.patch.object(setup, "source_version", lambda: "test"), \
+                        mock.patch.object(setup, "cpu_info", lambda: ("Test CPU", True, False)):
                     quiet(setup.build_engine, {"arch": "86"}, vision, True, "llama")
                 self.assertEqual([t for t, _ in built], ["strata-vision"])
                 self.assertIn("-DSTRATA_PORTABLE=OFF", built[0][1])
