@@ -2121,7 +2121,7 @@ bool Verifier::adapt_gate_wait(int32_t layer, std::string& err) {
     const Clock::time_point t0 = Clock::now();
     uint32_t spins = 0;
     while (adapt_gate_->landed.load(std::memory_order_acquire) < layer) {
-        _mm_pause();
+        cpu_pause();  // portable: cpu_relax.hpp (fork, Arm64)
         if ((++spins & 1023u) != 0) continue;
         if (Clock::now() - t0 > std::chrono::seconds(20)) {
             err = "verify: the adaptive tier's copies for layer " + std::to_string(layer) + " never landed" +
@@ -2863,7 +2863,7 @@ bool Verifier::run_slot_rows(const int* rows, int S, const int32_t* tokens, cons
     if (ar_on()) {
         if (ss_->ple.ready() && ple_stage()) {
             std::atomic_thread_fence(std::memory_order_seq_cst);
-            _mm_sfence();
+            store_fence();  // portable: cpu_relax.hpp (fork, Arm64)
             *flag = 1;
         }
         const cudaError_t se = cudaStreamSynchronize(cs_);
@@ -3039,7 +3039,7 @@ int Verifier::batch_poll(PoolMultiFn pool, void* user, std::string& err) {
     // doorbell graph needs the per-layer service below.
     if (ar_on() && ss_->ple.ready() && ple_stage()) {
         std::atomic_thread_fence(std::memory_order_seq_cst);
-        _mm_sfence();
+        store_fence();  // portable: cpu_relax.hpp (fork, Arm64)
         *h_flag_ = 1;
     }
     while (!ar_on() && b_k_ < b_steps_) {
@@ -3300,7 +3300,7 @@ int Verifier::service(PoolMultiFn pool, void* user, std::string& err) {
         const Clock::time_point tp = Clock::now();
         if (!ss.ple.table->gather_batch(pl_ple_rows_.data(), (size_t) T, h_ple_, err)) return false;
         std::atomic_thread_fence(std::memory_order_seq_cst);
-        _mm_sfence();
+        store_fence();  // portable: cpu_relax.hpp (fork, Arm64)
         ms_host += ms_since(tp);
         return true;
     };
@@ -3351,7 +3351,7 @@ int Verifier::service(PoolMultiFn pool, void* user, std::string& err) {
                               (int64_t) ms_since(b));
         progress_tick();
         std::atomic_thread_fence(std::memory_order_seq_cst);
-        _mm_sfence();
+        store_fence();  // portable: cpu_relax.hpp (fork, Arm64)
         if (*(volatile uint32_t*) h_flagA_ != want) {        // the pool did not publish a plan: an empty one
             sink_.counts[0] = 0;
             sink_.counts[1] = 0;
@@ -3425,7 +3425,7 @@ bool Verifier::pl_commit_async(int n_keep, std::string& err) {
     const Clock::time_point t0 = Clock::now();
     if (commit_live_) {   // its graph reads the words below when it starts: the previous one has (a window ago)
         cudaError_t q;
-        while ((q = cudaEventQuery(ev_commit_)) == cudaErrorNotReady) _mm_pause();
+        while ((q = cudaEventQuery(ev_commit_)) == cudaErrorNotReady) cpu_pause();  // portable: cpu_relax.hpp (fork, Arm64)
         if (q != cudaSuccess) { err = std::string("verify: commit: ") + cudaGetErrorString(q); return false; }
     }
     h_commit_[0] = n_keep;
