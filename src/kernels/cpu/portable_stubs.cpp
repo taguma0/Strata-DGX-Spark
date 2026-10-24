@@ -11,6 +11,8 @@
 #include "strata/kernels/cpu/iq_avx512.hpp"
 #include "strata/kernels/cpu/kq_avx1.hpp"
 #include "strata/kernels/cpu/kq_avx2.hpp"
+#include "strata/kernels/cpu/nvfp4_avx2.hpp"
+#include "strata/kernels/cpu/nvfp4_avx512.hpp"
 
 #include <arm_neon.h>
 
@@ -252,5 +254,24 @@ void iq128_down_rows(int, const uint8_t*, size_t, int, const void* const*, int, 
 }
 void q8k_quant_avx1(const float*, void*, int64_t) { x86_only("the Q8_K quantizer"); }
 void q8k_quant_avx2(const float*, void*, int64_t) { x86_only("the Q8_K quantizer"); }
+
+// 0.1.44: the NVFP4 expert rows (nvfp4_avx512.cpp / nvfp4_avx2.cpp).  native_expert.cpp reaches them behind its
+// AVX probes, which say no on Arm64: the fits() probes fall through to ggml-cpu's NVFP4 dot, the row kernels refuse.
+bool nvfp4_512_fits(int) { return false; }
+void nvfp4_512_gu_rows(const uint8_t*, size_t, size_t, int, const void* const*, int, float* const*, int, int, float,
+                       float) {
+    x86_only("the NVFP4 AVX-512 gate/up kernel");
+}
+void nvfp4_512_rows(const uint8_t*, size_t, int, const void* const*, int, float* const*, int, int, float) {
+    x86_only("the NVFP4 AVX-512 row kernel");
+}
+bool nvfp4_256_fits(int) { return false; }
+void nvfp4_256_gu_rows(const uint8_t*, size_t, size_t, int, const void* const*, int, float* const*, int, int, float,
+                       float) {
+    x86_only("the NVFP4 AVX-2 gate/up kernel");
+}
+void nvfp4_256_rows(const uint8_t*, size_t, int, const void* const*, int, float* const*, int, int, float) {
+    x86_only("the NVFP4 AVX-2 row kernel");
+}
 
 }  // namespace strata::kernels::cpu
