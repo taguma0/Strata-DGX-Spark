@@ -23,6 +23,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import setup  # noqa: E402
 
+setup.ARM64 = False   # these tests describe an x86-64 PC whatever machine runs them
+
 GOLDEN = Path(__file__).with_name("test_setup_golden.json")
 
 
