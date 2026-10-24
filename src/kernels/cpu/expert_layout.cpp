@@ -49,6 +49,11 @@ bool cpu_avx1_ok() { return false; }    // the older-x86 floors (#394 #595 #623)
 bool cpu_sse42_ok() { return false; }
 const char* isa_floor_build() { return ""; }
 
+// the gather-grid probes (their x86 bodies are CPUID probes below the #else): the AVX-2 gather
+// kernels are not built on Arm64, so the gate stays closed.
+int iq256_gather_setting() { return -1; }
+bool cpu_gather_fast() { return false; }
+
 std::string cpu_name() {
     std::ifstream f("/proc/cpuinfo");
     std::string line;
