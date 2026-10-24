@@ -1455,7 +1455,7 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
 endif()
 if(STRATA_CPU_ARM64)
   add_library(strata_kernels_cpu STATIC src/kernels/cpu/pool.cpp src/kernels/cpu/expert_layout.cpp
-              src/kernels/cpu/portable_stubs.cpp)
+              src/kernels/cpu/portable_stubs.cpp src/kernels/cpu/hadamard.cpp)
 else()
 add_library(strata_kernels_cpu STATIC src/kernels/cpu/expert.cpp src/kernels/cpu/pool.cpp
             src/kernels/cpu/expert_layout.cpp src/kernels/cpu/q2_avx2.cpp src/kernels/cpu/hadamard.cpp)
