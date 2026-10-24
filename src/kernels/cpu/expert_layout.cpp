@@ -311,6 +311,7 @@ std::string cpu_name() {
 }
 #endif
 
+#if !defined(STRATA_CPU_ARM64)  // Arm64: portable_stubs.cpp provides these entry points
 // ---- the AVX-512 probe and the oracle flag (#795) ----
 //
 // expert.cpp and iq_avx512.cpp are compiled for AVX-512, and a TU compiled that way may use AVX-512 in ANY of its
@@ -368,6 +369,7 @@ void cpu_require_expert_support() {
                  f.reason());
     std::exit(1);
 }
+#endif  // !STRATA_CPU_ARM64
 
 void q2_rows_any(const uint8_t* w, size_t row_bytes, int nblocks, const ActQ* const* a, int nt, float* const* out,
                  int r0, int r1) {

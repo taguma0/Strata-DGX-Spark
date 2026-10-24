@@ -33,6 +33,7 @@ bool native_experts_available() noexcept { return true; }
 // compiled for AVX-512 and iq_avx2.cpp / kq_avx2.cpp for AVX2, and native_gu_rows asks these on every CPU before it
 // has checked what the CPU can run.  A function in a wide-ISA file may use that ISA anywhere in its body, so an
 // answer that is only a comparison must not come from one (#795).
+#if !defined(__aarch64__)  // Arm64: portable_stubs.cpp answers these; no AVX kernels run here
 bool iq512_supported(int type) noexcept {
     return type == 16 || type == 17 || type == 18 || type == 21 || type == 22;
 }
@@ -42,6 +43,7 @@ bool iq256_supported(int type) noexcept {
 }
 
 bool kq256_supported(int type) noexcept { return type == 12 || type == 7 || type == 8; }
+#endif  // !__aarch64__
 
 bool native_fmt(int gu_type, int d_type, int64_t n_embd, int64_t n_ff, NativeFmt& f, std::string& err) {
     init_once();

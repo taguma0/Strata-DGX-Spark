@@ -10,6 +10,7 @@
 #include "strata/kernels/cpu/iq_avx512.hpp"
 #include "strata/kernels/cpu/kq_avx1.hpp"
 #include "strata/kernels/cpu/kq_avx2.hpp"
+#include "strata/kernels/cpu/expert_layout.hpp"
 
 #include <arm_neon.h>
 
@@ -95,6 +96,11 @@ void cpu_require_expert_support() {
 
 void expert_set_oracle_q8_0(bool) {}
 bool expert_oracle_q8_0_enabled() { return false; }
+
+// #795/#152: native_expert.cpp asks these; on Arm64 no AVX-2 gather kernel exists, so ggml's dots run.
+void q8k_quant_avx2(const float*, void*, int64_t) { std::abort(); }  // unreachable: q8k_avx2() checks cpu_avx2_ok()
+int iq256_gather_setting() { return -1; }
+bool cpu_gather_fast() { return false; }
 // Called for every layer even with a native pack, whose kernels never read this ActQ (expert_source.cpp): a no-op here.
 // The Q2_0 kernels that would read it are the stubs below and refuse.
 void act_quant_q8_1(const float*, int, ActQ& a) { a.nchunks = 0; }
