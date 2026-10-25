@@ -71,6 +71,16 @@ API は OpenAI / Anthropic 互換です：`http://127.0.0.1:8080/v1`（詳細は
 .venv/bin/python serve/server.py --engine strata --config strata-iq3_xxs.json --port 8081
 ```
 
+### モデル設定を変更不能にする (任意)
+
+チャット画面の Settings は、モデル設定（run config の `strata-<model>.json`）をブラウザから変更できます。API key なしで空いているサーバーでは、画面を開ける人は誰でも保存できます。これを拒否したい場合は `STRATA_RUN_CONFIG_RO=1` で起動します:
+
+```bash
+STRATA_RUN_CONFIG_RO=1 ./setup.sh --start
+```
+
+すべての保存が拒否 (403) され、設定カードは画面から消えます。チャット、API、モデルそれ自身は無邊で、ファイルは変わりません。
+
 ### ほかの端末からチャット画面を開く（Tailscale）
 
 DGX Spark の tailnet アドレスだけで待ち受け（`0.0.0.0` ではありません）、ほかの端末が使う名前を許可します。

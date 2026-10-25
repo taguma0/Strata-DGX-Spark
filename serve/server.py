@@ -334,6 +334,7 @@ def engine_frozen(base: tuple[float, int], now: tuple[float, int]) -> bool:
 VISION_READY_S = _timeout_env("STRATA_VISION_READY_S", 300.0)
 VISION_ENCODE_S = _timeout_env("STRATA_VISION_ENCODE_S", 300.0)
 ENGINE_READY_S = _timeout_env("STRATA_ENGINE_READY_S", 900.0)
+RUN_CONFIG_RO = os.environ.get("STRATA_RUN_CONFIG_RO", "").strip().lower() in ("1", "true", "yes", "on")
 
 
 # ------------------------------------------------------------------------------------------------ engines
@@ -7007,6 +7008,9 @@ def make_handler(svc: Service):
             return True
 
         def _config_get(self):
+            if RUN_CONFIG_RO:                             # the fork's STRATA_RUN_CONFIG_RO: hide the card
+                self._json(404, {"error": {"message": "the run config is read-only (STRATA_RUN_CONFIG_RO)"}})
+                return
             if not svc.config_path:
                 self._json(404, {"error": {"message": "this server was started without a run config"}})
                 return
@@ -7020,6 +7024,10 @@ def make_handler(svc: Service):
         def _config_post(self):
             """#564: change a few documented keys of the run config - JSON from Strata's own page only, as
             /settings (the key is checked before); every other key of the file stays as it is."""
+            if RUN_CONFIG_RO:                             # the fork's STRATA_RUN_CONFIG_RO: refuse every save
+                self._json(403, {"error": {"type": "permission_error",
+                                           "message": "the run config is read-only (STRATA_RUN_CONFIG_RO)"}})
+                return
             body = self._body()
             if not self._own_page("the run config can be changed"):
                 return
@@ -8553,6 +8561,9 @@ def main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> in
               "use it); set one, or leave api_key out", file=sys.stderr, flush=True)
     svc.cors_origins = origins_of(cfg.get("cors_origins"), "cors_origins", wildcard=True)
     svc.trusted_origins = origins_of(cfg.get("trusted_origins"), "trusted_origins", wildcard=False)
+    if RUN_CONFIG_RO:
+        print("[strata] STRATA_RUN_CONFIG_RO: the run config is read-only (the Settings view's Model settings "
+              "card is hidden and POST /config answers 403)", flush=True)
     try:
         svc.allowed_hosts = allowed_hosts_of(cfg.get("allowed_hosts"), os.environ.get("STRATA_ALLOWED_HOSTS", ""))
     except ValueError as e:

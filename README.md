@@ -71,6 +71,19 @@ If port 8080 is taken by another program, start it by hand on another port:
 .venv/bin/python serve/server.py --engine strata --config strata-iq3_xxs.json --port 8081
 ```
 
+### Keep the model settings read-only (optional)
+
+The chat page's Settings view can change the model settings (the run config `strata-<model>.json`) from the
+browser, and on a server without an API key everyone who can open the page can save them. To refuse those
+saves on this PC, start with `STRATA_RUN_CONFIG_RO=1`:
+
+```bash
+STRATA_RUN_CONFIG_RO=1 ./setup.sh --start
+```
+
+The settings card disappears from the page and every save is refused (403). Chat, the API and the model
+itself are untouched, and the file itself is as it was.
+
 ### Open the chat page from other devices (Tailscale)
 
 Listen on the DGX Spark's tailnet address only (not on `0.0.0.0`), and allow the names other devices use for it:

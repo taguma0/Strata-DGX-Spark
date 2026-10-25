@@ -6091,6 +6091,63 @@ class ClaudeCodeBillingStamp(unittest.TestCase):
                                                          "tools": tools}))
         self.assertEqual(ids[1][:len(first) - 8], first[:len(first) - 8])   # all but the generation header
 
+class RunConfigReadOnly(unittest.TestCase):
+    """the fork's STRATA_RUN_CONFIG_RO: GET /config answers 404 (the web app hides the Model settings card)
+    and POST /config answers 403 for every client, the API key holder included; off keeps the stock behavior."""
+
+    @classmethod
+    def setUpClass(cls):
+        tok = ByteTokenizer()
+        cls.engine = MockEngine(tok, "ok", max_context=CTX)
+        cls.svc = Service(cls.engine, tok, ChatTemplate(ROOT / "serve/chat_template.jinja"))
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.cfg = Path(cls.tmp.name) / "strata-mock.json"
+        cls.cfg.write_text(json.dumps({"mtp": True}), encoding="utf-8")
+        cls.svc.config_path = str(cls.cfg)
+        cls.httpd = serve(cls.svc, host="127.0.0.1", port=0)
+        cls.port = cls.httpd.server_address[1]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+        cls.tmp.cleanup()
+
+    def get_config(self):
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/config", timeout=10) as r:
+            return r.status
+
+    def post_config(self, set_body):
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/config",
+                                     data=json.dumps({"set": set_body}).encode(),
+                                     headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def test_off_the_card_loads_and_saves_as_always(self):
+        self.assertEqual(self.get_config(), 200)
+        status, body = self.post_config({"mtp": False})
+        self.assertEqual((status, body["changed"]), (200, ["mtp"]))
+        self.assertEqual(json.loads(self.cfg.read_text(encoding="utf-8"))["mtp"], False)
+
+    def test_ro_hides_the_card_and_refuses_every_save(self):
+        import serve.server as S
+        before = self.cfg.read_bytes()
+        with mock.patch.object(S, "RUN_CONFIG_RO", True):
+            with self.assertRaises(urllib.error.HTTPError) as g:
+                self.get_config()
+            self.assertEqual(g.exception.code, 404)
+            for set_body in ({}, {"mtp": False}):
+                status, msg = self.post_config(set_body)
+                self.assertEqual(status, 403, repr(msg))
+                self.assertIn("STRATA_RUN_CONFIG_RO", msg["error"]["message"])
+        self.assertEqual(self.cfg.read_bytes(), before)              # the refused saves wrote nothing
+        self.assertFalse((self.cfg.parent / (self.cfg.name + ".tmp")).exists())
+
+
 class IPv6(unittest.TestCase):
     """--host ::1 and :: bind the IPv6 family (serve() picks AF_INET6 on a colon); "::" serves IPv4 too
     (Server.server_bind clears V6ONLY; on a v6-only kernel the dual-stack test skips)."""
