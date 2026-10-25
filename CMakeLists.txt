@@ -1603,7 +1603,8 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64|ARM64)$")
 endif()
 if(STRATA_CPU_ARM64)
   add_library(strata_kernels_cpu STATIC src/kernels/cpu/pool.cpp src/kernels/cpu/expert_layout.cpp
-              src/kernels/cpu/portable_stubs.cpp src/kernels/cpu/hadamard.cpp)
+              src/kernels/cpu/portable_stubs.cpp src/kernels/cpu/hadamard.cpp
+              src/kernels/cpu/iq4nl_neon.cpp)
 else()
 add_library(strata_kernels_cpu STATIC src/kernels/cpu/expert.cpp src/kernels/cpu/pool.cpp
             src/kernels/cpu/expert_layout.cpp src/kernels/cpu/q2_avx2.cpp src/kernels/cpu/hadamard.cpp)
@@ -1612,7 +1613,9 @@ target_include_directories(strata_kernels_cpu PUBLIC include)
 # Plan v0.3 P6: only the kernel files get the AVX-512 / AVX2 flags; the pool and the probe run on any x86-64,
 # and the engine picks the kernels at run time (cpu_avx512_ok).
 if(STRATA_CPU_ARM64)
-  # no x86 flags
+  # iq4nl_neon.cpp's SDOT (vdotq_s32): only this TU gets +dotprod; cpu_neon_dot_ok() (portable_stubs.cpp,
+  # base ISA) gates it at run time, so a CPU without FEAT_DotProd never runs the wide-ISA code.
+  set_source_files_properties(src/kernels/cpu/iq4nl_neon.cpp PROPERTIES COMPILE_OPTIONS "-march=armv8.2-a+dotprod")
 elseif(MSVC)
   set_source_files_properties(src/kernels/cpu/expert.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX512")
   set_source_files_properties(src/kernels/cpu/q2_avx2.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
@@ -2245,6 +2248,15 @@ if(STRATA_BUILD_TESTS)
     add_test(NAME tq_cpu_parity COMMAND tq_cpu_parity)
     add_test(NAME tq_cpu_parity_avx2 COMMAND ${CMAKE_COMMAND} -E env STRATA_FORCE_AVX2=1 $<TARGET_FILE:tq_cpu_parity>)
     set_tests_properties(tq_cpu_parity tq_cpu_parity_avx2 PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
+  endif()
+
+  # DGX Spark fork: the Arm64 SDOT IQ4_NL down rows (iq4nl_neon.cpp) vs ggml-cpu's NEON dot, bit for bit;
+  # --bench is the ggml-vs-SDOT microbenchmark on DRAM-streaming blobs
+  if(STRATA_CPU_ARM64)
+    add_executable(iq4nl_neon_parity src/kernels/cpu/iq4nl_neon_parity.cpp)
+    target_link_libraries(iq4nl_neon_parity PRIVATE strata_kernels_cpu)
+    add_test(NAME iq4nl_neon_parity COMMAND iq4nl_neon_parity)
+    set_tests_properties(iq4nl_neon_parity PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
   endif()
 
   add_executable(expert_parity src/kernels/cpu/expert_parity.cpp)

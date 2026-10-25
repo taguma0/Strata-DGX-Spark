@@ -88,3 +88,4 @@ node_modules/
 
 # run-config and source backups are local install/build artifacts, never shipped
 *.bak
+build-neon/

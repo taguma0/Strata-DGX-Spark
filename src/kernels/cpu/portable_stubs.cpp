@@ -16,6 +16,13 @@
 #include "strata/kernels/cpu/tq_cpu.hpp"
 
 #include <arm_neon.h>
+#if defined(__linux__)
+#include <sys/auxv.h>      // getauxval: the dotprod probe (cpu_neon_dot_ok, below)
+#include <asm/hwcap.h>
+#endif
+#ifndef HWCAP_ASIMDDOT
+#define HWCAP_ASIMDDOT (1UL << 20)
+#endif
 
 #include <cmath>
 #include <cstdio>
@@ -60,9 +67,8 @@ void iq256_gu_rows(int, const uint8_t*, size_t, size_t, int, const void* const*,
 void iq256_rows(int, const uint8_t*, size_t, int, const void* const*, int, float* const*, int, int) {
     x86_only("the AVX-2 i-quant kernel");
 }
-void iq4nl256_down_rows(const uint8_t*, size_t, int, const void* const*, int, float* const*, int, int) {
-    x86_only("the AVX-2 IQ4_NL kernel");
-}
+// iq4nl256_down_rows has a real Arm64 implementation on this CPU: iq4nl_neon.cpp (the SDOT
+// multi-token kernel), gated at run time by cpu_neon_dot_ok() below; no stub here.
 bool kq256_supported(int) noexcept { return false; }
 void kq256_gu_rows(int, const uint8_t*, size_t, size_t, int, const void* const*, int, float* const*, int, int) {
     x86_only("the AVX-2 K-quant kernel");
@@ -92,6 +98,16 @@ void bf16_rows_dot_multi_avx1(const uint16_t* w, int rows, int cols, const float
 // ---- the canonical Q2_0 pack's CPU expert kernel (AVX-512 VNNI + VBMI): x86-64 only
 const char* CpuFeatures::reason() const { return "not an x86-64 CPU"; }
 CpuFeatures cpu_features() { return CpuFeatures{}; }
+
+// iq4nl_neon.cpp's rows use vdotq_s32 (FEAT_DotProd).  The probe is here, in a base-ISA TU, and not in
+// the +dotprod kernel file: native_expert.cpp asks it before any wide-ISA code runs (the #795 rule).
+bool cpu_neon_dot_ok() noexcept {
+#if defined(__linux__)
+    return (getauxval(AT_HWCAP) & HWCAP_ASIMDDOT) != 0;
+#else
+    return true;   // Apple silicon has dotprod from the M1 on
+#endif
+}
 
 void cpu_require_expert_support() {
     std::fprintf(stderr,

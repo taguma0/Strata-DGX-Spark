@@ -378,7 +378,7 @@ void native_down_rows(const NativeFmt& f, const uint8_t* blob, const void* const
     // IQ4_NL down rows: the AVX-2 multi-token kernel decodes the nibbles and absolutises the weights once per
     // block instead of once per token; ggml-cpu's dot is single-token.  STRATA_NO_IQ4NL falls back to it.
     #if defined(__aarch64__)
-    static const bool iq4nl_mt = false;   // the AVX-2 kernel is x86-only: ggml-cpu's NEON dot below
+    static const bool iq4nl_mt = cpu_neon_dot_ok() && std::getenv("STRATA_NO_IQ4NL") == nullptr;   // iq4nl_neon.cpp (SDOT)
 #else
     static const bool iq4nl_mt = std::getenv("STRATA_NO_IQ4NL") == nullptr;
 #endif
@@ -395,7 +395,12 @@ void native_down_rows(const NativeFmt& f, const uint8_t* blob, const void* const
         kq256_rows(f.d_type, blob + f.down_off, f.d_row, (int) f.n_ff, hq, nt, out, r0, r1);
         return;
     }
-    if (cpu_avx2_ok() && nt >= mt_min && f.d_type == 20 && iq4nl_mt) {   // #152: the same rule as the gate/up rows
+    #if defined(__aarch64__)
+    const bool iq4nl_isa = true;   // iq4nl_mt already probed dotprod (the x86 side tests cpu_avx2_ok)
+    #else
+    const bool iq4nl_isa = cpu_avx2_ok();
+    #endif
+    if (iq4nl_isa && nt >= mt_min && f.d_type == 20 && iq4nl_mt) {   // #152: the same rule as the gate/up rows
         iq4nl256_down_rows(blob + f.down_off, f.d_row, (int) f.n_ff, hq, nt, out, r0, r1);
         return;
     }

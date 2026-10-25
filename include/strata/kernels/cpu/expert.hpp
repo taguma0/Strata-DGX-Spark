@@ -92,6 +92,12 @@ struct ExpertScratch {
 /// Runtime CPU feature check.  The kernel uses AVX512-VNNI + AVX512-VBMI + AVX512VL, and code compiled with
 /// `/arch:AVX512` can emit AVX-512 anywhere in its translation unit, so a machine without them must be
 /// REFUSED rather than silently run.  `s2_expert_scalar` is the fallback and exists for tests.
+#if defined(__aarch64__)
+// Does this CPU have dotprod (vdotq_s32)?  portable_stubs.cpp probes HWCAP_ASIMDDOT; iq4nl_neon.cpp
+// (the Arm64 SDOT IQ4_NL rows) needs it, and native_expert.cpp gates the dispatch on it.
+bool cpu_neon_dot_ok() noexcept;
+#endif
+
 struct CpuFeatures {
     bool avx512f = false;
     bool avx512bw = false;
