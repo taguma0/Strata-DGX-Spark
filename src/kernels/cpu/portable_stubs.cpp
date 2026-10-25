@@ -57,6 +57,16 @@ void iq512_gu_rows(int, const uint8_t*, size_t, size_t, int, const void* const*,
 void iq512_rows(int, const uint8_t*, size_t, int, const void* const*, int, float* const*, int, int) {
     x86_only("the AVX-512 i-quant kernel");
 }
+
+// 0.2.5: native_expert.cpp's new asks - the DeepSeek CPU lane's 512-bit rows and their gather probe
+// (iq_avx512.cpp's iq512x_*; upstream stubs the same trio for Metal in metal/src/engine/stubs_025.cpp).
+// The probes say no; native_expert.cpp only calls iq512x_rows behind cpu_avx512_ok()/iq512x_supported(),
+// both false on Arm64, so the stopping stub below is never reached.
+bool iq512_gather_on() noexcept { return false; }
+bool iq512x_supported(int) noexcept { return false; }
+void iq512x_rows(int, const uint8_t*, size_t, int, const void* const*, int, float* const*, int, int) {
+    x86_only("the 512-bit DeepSeek CPU rows");
+}
 bool iq256_supported(int) noexcept { return false; }
 void iq256_gu_rows_exact_one(int, const uint8_t*, size_t, size_t, int, const void*, float*, int, int) {
     x86_only("the AVX-2 i-quant exact-one kernel");  // the exact1 call is behind the avx2 probe (native_expert.cpp:179)
