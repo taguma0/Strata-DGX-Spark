@@ -77,7 +77,17 @@ bool hc_q8_env() {
                                       "decode faster, answers differ slightly); STRATA_HC_Q8=0 keeps the bf16 read\n");
         return g12;
 #else
-        return false;
+        // DGX Spark (GB10: sm_121, integrated, unified LPDDR5X): on by default.  The verify window is bandwidth-bound and
+        // the bf16 projections are 1.2 GiB of each window's reads: decode +7% (56.9 vs 53.2 tok/s, 3 alternating pairs);
+        // against the bf16 read top-1 94.6%, KL 0.030, perplexity 3.936 vs 3.937 (tools/quant_quality.py, 4,995 positions)
+        int dev = 0;
+        cudaDeviceProp p;
+        const bool gb10 = cudaGetDevice(&dev) == cudaSuccess && cudaGetDeviceProperties(&p, dev) == cudaSuccess &&
+                          p.integrated && p.major == 12 && p.minor == 1;
+        (void) cudaGetLastError();
+        if (gb10) std::fprintf(stderr, "strata: DGX Spark (GB10): the hyper-connection projections are read as Q8_0 (decode "
+                                       "about 7%% faster, answers can differ in near-tie tokens); STRATA_HC_Q8=0 keeps the bf16 read\n");
+        return gb10;
 #endif
     }();
     return on;
