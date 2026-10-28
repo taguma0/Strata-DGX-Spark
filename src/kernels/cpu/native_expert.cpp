@@ -500,6 +500,17 @@ void native_gu_rows_impl(const NativeFmt& f, const uint8_t* blob, const void* co
         nvfp4_256_gu_rows(blob, f.gu_row, f.up_off, n, act, nt, ff, r0, r1, sg, su);
         return;
     }
+#if defined(__aarch64__)
+    // DGX Spark fork: the Arm64 SDOT IQ3_XXS gate/up kernel (iq3xxs_neon.cpp).  Its per-token
+    // accumulation follows ggml's dot exactly, so every token's rows are bit-identical to the
+    // ggml fallback below at any nt - no #152 rule, nt 1 (most verify windows) takes it too.
+    // STRATA_NO_IQ3XXS falls back to ggml-cpu's dot.
+    static const bool iq3xxs_neon = cpu_neon_dot_ok() && std::getenv("STRATA_NO_IQ3XXS") == nullptr;
+    if (iq3xxs_neon && f.gu_type == 18 && f.tail_off == 0) {
+        iq3xxs256_gu_rows(blob, f.gu_row, f.up_off, n, act, nt, ff, r0, r1);
+        return;
+    }
+#endif
     const ggml_vec_dot_t dot = traits(f.gu_type)->vec_dot;
     for (int r = r0; r < r1; ++r) {
         const uint8_t* gr = blob + (size_t) r * f.gu_row;
