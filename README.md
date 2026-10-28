@@ -40,6 +40,9 @@ and GPU), engine 0.1.52, model swift-1.5-iq3_xxs, context 262,144 tokens, 3 runs
 - Full record with setup and caveats:
   [bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs](bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs/README.md).
 - The CPU expert pool runs on the performance cores only (`--pool-affinity auto`): agent decode +6.2% against the mixed P+E pool with half the workers, prompt reading unchanged ([A/B record](bench/results/2026-10-28-gb10-pool-affinity-ab/README.md)).
+- Replacing the IQ3_XXS gate/up dot with a tuned Arm SDOT kernel (1.26x at 1 token, 3.11x at 4+) changed
+  end-to-end prefill/decode by **nothing measurable**: the expert rows are DRAM/GPU-bound, not dot-bound
+  ([A/B record](bench/results/2026-10-29-iq3xxs-neon-ab/RESULTS.md)).
 
 <details>
 <summary>Earlier figures (engine 0.1.38, measured 2026-10-05) - kept as history</summary>
@@ -129,7 +132,10 @@ without a key.
 ### What is different from the x86-64 build, and what is not done
 
 - Strata's own AVX-512 / AVX-2 CPU kernels are x86-only and are **not built** on Arm64. The i-quant experts
-  (IQ2_XS, IQ3_XXS, IQ3_S, ...) run on ggml-cpu's NEON code instead, so **there are no tuned Arm kernels yet**.
+  run on ggml-cpu's NEON code, plus two tuned Arm SDOT kernels for the IQ4_NL and IQ3_XXS gate/up rows. Both are
+  bit-identical to the ggml dot they replace and 1.26-3.11x faster in isolation, yet the engine's speed is
+  unchanged - the expert windows are DRAM/GPU-bound, not dot-bound
+  ([A/B record](bench/results/2026-10-29-iq3xxs-neon-ab/RESULTS.md)).
 - The canonical **Q2_0 pack's CPU kernel is x86-only**: on Arm64 it stops at start with a clear message. Use an
   i-quant size.
 - A GB10 reports no VRAM size (CPU and GPU share one memory). Setup counts **a quarter of the RAM, at most 32 GB,** as
