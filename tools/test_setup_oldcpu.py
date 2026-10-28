@@ -19,6 +19,8 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 import setup  # noqa: E402
 
+setup.ARM64 = False   # these tests describe an x86-64 PC whatever machine runs them (fork: cpu_floor's is_arm64 gate reads this)
+
 
 def cpuinfo(flags: str):
     return mock.patch("builtins.open", lambda *a, **k: io.StringIO(f"model name\t: Old Xeon\nflags\t\t: {flags}\n"))

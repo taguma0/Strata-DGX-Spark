@@ -1387,8 +1387,10 @@ def _cpuid_floor() -> str:
 
 
 def is_arm64() -> bool:
-    """An ARM64 CPU (DGX Spark / GB10, Grace): there is no AVX here, and no ready-made engine for it."""
-    return platform.machine().lower() in ("aarch64", "arm64")
+    """An ARM64 CPU (DGX Spark / GB10, Grace): there is no AVX here, and no ready-made engine for it.
+    The fork reads the ARM64 global above: the golden-style tests set setup.ARM64 = False to describe an
+    x86 PC on any host, and a bare platform check there would pick the local-compile engine path."""
+    return ARM64
 
 
 def cpu_floor(avx2: bool) -> str:
