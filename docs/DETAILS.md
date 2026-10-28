@@ -1120,6 +1120,22 @@ on, at most 32). An explicit `--pool-workers N` is spread alternately across the
 - Check the IOMMU. On a distro kernel where it translates every DMA (`cat /sys/kernel/iommu_groups/*/type | sort | uniq -c`
   shows `DMA-FQ`), pinned copies ran slower than with `iommu=pt` on the kernel command line.
 
+### Hybrid CPUs (`--pool-affinity`)
+
+A hybrid CPU mixes fast and slow cores. Every CPU expert worker takes part of every window, so a pool of mixed
+cores runs at the speed of the core that finishes last. `--pool-affinity` chooses the cores for workers: `all`
+(default, one worker per physical core), `auto` (performance cores first, then their SMT siblings, then efficiency
+cores) and `p-cores` (performance cores and their siblings only). With `auto` and `p-cores` the default worker
+count is the performance cores minus one and the host thread keeps a performance core. `--pool-affinity measure`
+times the two layouts at start and takes the faster (native packs; opt-in table above).
+
+Measured on the GB10 (10 Cortex-X925 + 10 Cortex-A725, no SMT), swift-1.5-iq3_xxs, engine 0.1.52, 3 runs per test,
+a fresh server per layout: `all` (18 workers, 9 P + 9 E) gave chat 61.4 and agent 61.2 tok/s; `p-cores` and `auto`
+(the same placement on this CPU: 9 X925 workers, host on an X925) gave chat 62.8 / 68.0 and agent 65.0 / 64.9 tok/s.
+Prompt reading did not move (±0.6%, it is DRAM-bound) and first-token times matched. Half the workers and faster
+answers: the E cores were the stragglers of the lockstep pool. This install runs `--pool-affinity auto`
+([bench/results/2026-10-28-gb10-pool-affinity-ab](../bench/results/2026-10-28-gb10-pool-affinity-ab/README.md)).
+
 ### Which logical processors (`--pool-cores`, experimental)
 
 The engine starts one worker per physical core and keeps the first core for the main thread (the one that waits for the GPU).
@@ -1328,6 +1344,7 @@ described in the sections above. Raw data is in [`bench/results/`](../bench/resu
 | 0.1.40 | Radeon AI PRO R9700, `--vram-reserve-mib 17084`, Q2_0, `--max-context 196608`, 5 interleaved pairs | `--kv-grow`: slots 6,213 -> 7,968, decode 96.3 -> 98.5 tok/s (x1.023, 5/5). At `--max-context 262144` the default engine did not start; `--kv-grow` started with 7,877 slots (94.4 tok/s) |
 | 0.1.40 | 4060 Ti + 5080 layer split, i9-14900KF | `--host-core last`: a decode that swung ±6% became steady, 8% faster on average |
 | 0.1.41 | Core i7-13700K (8 P + 8 E), RTX 5090, 64 GB, Windows 11, Swift 1.5 IQ3_XXS, 128K | `--pool-affinity measure`: `all` (15 workers) 6.7 ms per verify window in the CPU pool, 148 tok/s; `p-cores` (7 workers) 2.2 ms, 188-191 tok/s. Over four starts of one day `all` read 14.8, 21.9 and 25.3 ms against 6.1 to 6.2 for `p-cores`, and once `all` won |
+| 0.1.52 | NVIDIA GB10 (10 Cortex-X925 + 10 Cortex-A725, no SMT), swift-1.5-iq3_xxs, 262K context, median of 3 | `--pool-affinity all` (18 workers, 9 P + 9 E): chat 61.4, agent 61.2 tok/s; `p-cores` / `auto` (9 workers, X925 only, host on a X925; `auto` settles on the same placement on GB10): chat 62.8 / 68.0, agent 65.0 / 64.9 tok/s; prompt reading ±0.6%, TTFT matched. [`bench/results/2026-10-28-gb10-pool-affinity-ab`](../bench/results/2026-10-28-gb10-pool-affinity-ab/README.md) |
 | 0.1.45 | Ryzen 5 5600X etc. | `STRATA_CPU_IQ_ALL_EXACT1`: per expert, one thread, IQ3_S -32% on Threadripper PRO 3975WX, -11% on Ryzen 5 5600X; Core Ultra 7 265 IQ3_S -60%. End to end: Xeon E5-2643 v3 + RTX A4000 CPU part -5% (decode +0.5%, +2.5% on story and code), Core Ultra 7 265 + RTX 3060 +0.4%, Threadripper + R9700 +0.4% |
 
 ### Images

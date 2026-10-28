@@ -36,6 +36,7 @@ ASUS GX10 1 台（DGX Spark と同じ GB10 搭載機。GB10、Arm コア 20、CP
 - 長い**新規**プロンプトがいちばん弱い点です。16K の新規プロンプトの後の最初のトークンまでは 10〜157 秒の幅がありました（チャットとエージェントの安定速度には影響しません）。
 - 条件と注意点をこめた全体の記録:
   [bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs](bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs/README.md)。
+- CPU の expert プールは P コア（Cortex-X925）だけで動かしています（`--pool-affinity auto`）。P+E 混在プールと比べワーカーを半分に減らしてエージェントの答えが +6% 速く、プロンプト読み取りは同じでした（[A/B 記録](bench/results/2026-10-28-gb10-pool-affinity-ab/README.md)）。
 
 <details>
 <summary>過去の数値（エンジン 0.1.38、2026-10-05 計測）- 歴史記録として維持</summary>
