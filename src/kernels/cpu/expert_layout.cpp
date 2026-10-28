@@ -65,6 +65,7 @@ std::string cpu_name() {
         }
     }
     return "aarch64";
+}
 #elif !defined(__x86_64__) && !defined(__i386__) && !defined(_M_X64) && !defined(_M_IX86)
 bool cpu_avx512_ok() { return false; }
 bool cpu_avx512bw_ok() { return false; }
