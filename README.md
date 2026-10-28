@@ -19,8 +19,31 @@ images on, a 262,144-token context**. Other sizes should work but were **not tes
 
 ### How fast is it?
 
-Measured on one ASUS GX10 (a GB10 machine like the DGX Spark; GB10, 20 Arm cores, 121 GiB of memory shared by CPU and GPU), engine 0.1.38, one request
-per row, 128-token answers, greedy decoding (these 0.1.38 figures are kept as history; the current 0.1.52 figures are below):
+Measured on one ASUS GX10 (a GB10 machine like the DGX Spark; GB10, 20 Arm cores, 121 GiB of memory shared by CPU
+and GPU), engine 0.1.52, model swift-1.5-iq3_xxs, context 262,144 tokens, 3 runs per test, medians with ranges:
+
+| Test | Median | Range |
+| ---: | ---: | ---: |
+| Writing answers (chat) | **64 tokens/s** | 58.6-84.5 |
+| Chat first token | **0.46 s** | 0.38-149.95 s |
+| Reads a 4K prompt | **1,456 tokens/s** | 1,312-1,470 |
+| First token after a 4K prompt | **2.79 s** | 2.77-3.10 s |
+| Reads a 16K prompt | **1,653 tokens/s** | 1,525-1,669 |
+| First token after a 16K prompt | 149 s | 9.7-157 s |
+| Agent session answers | **68 tokens/s** | 60.1-77.3 |
+| Agent conversation-cache hit | **70.4%** | 73 tokens re-read per session |
+
+- Chat and agent answers stay at **64-68 tokens/s**. The agent's conversation cache re-reads about 70% of each
+  turn's earlier tokens, which keeps agent answers fast and cheap.
+- A long *fresh* prompt is the weakest point: the first token after a 16K prompt ranged 10-157 s. Steady chat and
+  agent answers are not affected.
+- Full record with setup and caveats:
+  [bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs](bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs/README.md).
+
+<details>
+<summary>Earlier figures (engine 0.1.38, measured 2026-10-05) - kept as history</summary>
+
+One request per row, 128-token answers, greedy decoding:
 
 | Prompt length | Reads your prompt | Writes answers |
 | ---: | ---: | ---: |
@@ -32,16 +55,12 @@ per row, 128-token answers, greedy decoding (these 0.1.38 figures are kept as hi
 | 1,582 tokens | **61 tokens/s** | 42 tokens/s |
 | 431 tokens | **56 tokens/s** | 15 tokens/s (the first request after start-up) |
 
-- Writing answers stays at about **38-42 tokens/s** however long the prompt is (up to the 75K tokens measured).
-- **Short prompts are read about 20x slower** than long ones. Why is not yet known.
-- The numbers come from one run per row, on a machine that was also in normal use. Full table, setup and caveats:
+- Writing answers stayed at about **38-42 tokens/s** however long the prompt was (up to the 75K tokens measured).
+- **Short prompts were read about 20x slower** than long ones. Why is not yet known.
+- One run per row, on a machine that was also in normal use. Full table, setup and caveats:
   [bench/results/2026-10-05-dgx-spark-gb10](bench/results/2026-10-05-dgx-spark-gb10/README.md).
 
-**Current (engine 0.1.52, measured 2026-10-28 on the same GX10):** chat decode **64 tokens/s**, an agent
-session decode **68 tokens/s** with a **70% conversation-cache hit**, prompts at **1,456 tokens/s** (4K) and
-**1,653 tokens/s** (16K). The first token of a fresh 16K prompt ranges 10-157 s - a long fresh prompt is the
-weakest point; chat and agent answers stay steady. Full record:
-  [bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs](bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs/README.md).
+</details>
 
 ### Install
 
