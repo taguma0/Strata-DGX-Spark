@@ -97,7 +97,7 @@ bool CapturedGraph::wait_ms(int timeout_ms) const {
         if (q == cudaSuccess) return true;
         if (q != cudaErrorNotReady) return false;   // a real error, not "not finished"
         if (std::chrono::steady_clock::now() >= deadline) return false;
-        for (int i = 0; i < 64; ++i) strata::cpu_pause();
+        for (int i = 0; i < 64; ++i) strata_cpu_pause();
     }
 }
 

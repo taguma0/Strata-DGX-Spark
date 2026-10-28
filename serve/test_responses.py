@@ -276,26 +276,18 @@ class NoLeakedSampler(unittest.TestCase):
     running (21 after this file), polling NVML and psutil every second, which skewed serve/test_parallel's timings."""
 
     def test_server_close_ends_the_sampler(self):
-        import threading
         import time
         tok = ByteTokenizer()
-        def samplers():   # the running samplers by thread identity: a sampler from a preceding test's close() can
-                          # still be inside its last sample() when this test starts (it ends a few ms later); counting
-                          # that dying thread in `before` and losing it during serve() is the 1 != 2 that flaked CI
-            return {t.name for t in threading.enumerate() if t.name.endswith("(_loop)")}
-        before = samplers()
         httpd = serve(Service(MockEngine(tok, ANSWER, max_context=16384), tok, TEMPLATE), port=0)
-        added = samplers() - before
-        self.assertEqual(len(added), 1)
+        sampler = getattr(getattr(httpd, "svc", None), "telemetry", None)
+        self.assertIsNotNone(sampler, "the server did not initialize telemetry")
+        thread = getattr(sampler, "_thread", None)
+        self.assertIsNotNone(thread, "the server did not start its hardware sampler thread")
+        self.assertTrue(thread.is_alive(), "the hardware sampler thread died immediately")
         httpd.shutdown()
         httpd.server_close()
-        alive = added & samplers()
-        for _ in range(50):
-            alive = added & samplers()
-            if not alive:
-                break
-            time.sleep(0.1)
-        self.assertFalse(alive)
+        thread.join(timeout=5.0)
+        self.assertFalse(thread.is_alive(), "a stopped server left its hardware sampler running")
 
 
 # ------------------------------------------------------------------------------------------------ over HTTP
@@ -396,6 +388,21 @@ class OverHttp(Server):
         self.assertEqual(r["output"][0]["status"], "incomplete")
         code, events = self.post({"model": "m", "input": "hi", "max_output_tokens": 5, "stream": True})
         self.assertEqual(events[-1]["type"], "response.incomplete")
+
+    def test_max_output_tokens_zero_and_minus_one_mean_no_cap(self):
+        # #4036: the documented "no cap" values; the answer is complete, not cut at the cap
+        for n in (0, -1):
+            code, r = self.post({"model": "m", "input": "hi", "max_output_tokens": n})
+            self.assertEqual((code, r["status"]), (200, "completed"), (n, r))
+            self.assertIsNone(r["incomplete_details"])
+            code, events = self.post({"model": "m", "input": "hi", "max_output_tokens": n, "stream": True})
+            self.assertEqual((code, events[-1]["type"]), (200, "response.completed"), n)
+
+    def test_max_output_tokens_bad_values_are_400(self):
+        for n in (-2, -100, 1.5, True, "5"):
+            code, r = self.post({"model": "m", "input": "hi", "max_output_tokens": n})
+            self.assertEqual(code, 400, (n, r))
+            self.assertEqual(r["error"]["param"], "max_output_tokens", n)
 
     def test_effort_none_does_not_think(self):
         self.engine.scripts = [self.tok.encode("Hello.<|im_end|>", parse_special=True)]
