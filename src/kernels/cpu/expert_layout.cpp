@@ -49,6 +49,11 @@ bool cpu_avx2_ok() { return true; }
 bool cpu_avx1_ok() { return false; }    // the older-x86 floors (#394 #595 #623) do not apply
 bool cpu_sse42_ok() { return false; }
 
+// the gather-grid probes: iq256_gather_setting() and isa_floor_build() moved to 0.2.7's shared body
+// (env-gated, closed on Arm64) - only cpu_gather_fast() keeps its closed answer here: the shared
+// cpu_gather_fast_here() (compiled everywhere) calls it, and the x86 CPUID body is guarded below.
+bool cpu_gather_fast() { return false; }
+
 // the gather-grid probes need no Arm64 stand-ins in 0.2.7: iq256_gather_setting() and
 // isa_floor_build() moved to the shared body (env-gated, closed on Arm64), and cpu_gather_fast()
 // is answered by portable_stubs.cpp.
