@@ -15,12 +15,12 @@
 
 This fork adds an Arm64 port so Strata runs on GB10 machines: tested on an ASUS GX10, which has the same chip as the DGX Spark.
 It chats, writes code and **reads pictures**, the same as on a PC. Tested here: **Qwen3.8-Flash-Next IQ3_XXS with
-images on, a 131,072-token context**. Other sizes should work but were **not tested**.
+images on, a 262,144-token context**. Other sizes should work but were **not tested**.
 
 ### How fast is it?
 
 Measured on one ASUS GX10 (a GB10 machine like the DGX Spark; GB10, 20 Arm cores, 121 GiB of memory shared by CPU and GPU), engine 0.1.38, one request
-per row, 128-token answers, greedy decoding:
+per row, 128-token answers, greedy decoding (these 0.1.38 figures are kept as history; the current 0.1.52 figures are below):
 
 | Prompt length | Reads your prompt | Writes answers |
 | ---: | ---: | ---: |
@@ -37,9 +37,15 @@ per row, 128-token answers, greedy decoding:
 - The numbers come from one run per row, on a machine that was also in normal use. Full table, setup and caveats:
   [bench/results/2026-10-05-dgx-spark-gb10](bench/results/2026-10-05-dgx-spark-gb10/README.md).
 
+**Current (engine 0.1.52, measured 2026-10-28 on the same GX10):** chat decode **64 tokens/s**, an agent
+session decode **68 tokens/s** with a **70% conversation-cache hit**, prompts at **1,456 tokens/s** (4K) and
+**1,653 tokens/s** (16K). The first token of a fresh 16K prompt ranges 10-157 s - a long fresh prompt is the
+weakest point; chat and agent answers stay steady. Full record:
+  [bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs](bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs/README.md).
+
 ### Install
 
-You need a DGX Spark with the CUDA Toolkit 13.0 (`/usr/local/cuda`), `g++` and `git`, and about **85 GB of free disk**
+You need a DGX Spark with a CUDA Toolkit 13 (`/usr/local/cuda`; 13.0 through 13.3 measured), `g++` and `git`, and about **85 GB of free disk**
 for IQ3_XXS (model, image encoder and draft layer). There is no ready-made Arm64 engine, so setup **compiles the engine
 and the image encoder on your machine** the first time (a while: it builds many CUDA kernels). It then downloads the
 model from Hugging Face. If it stops, run the same command again: it continues.
