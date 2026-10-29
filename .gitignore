@@ -93,3 +93,8 @@ node_modules/
 # run-config and source backups are local install/build artifacts, never shipped
 *.bak
 build-neon/
+# DGX Spark build outputs and local venv (docs/DGX_SPARK_LINUX.md)
+/out-spark/
+/build-spark/
+/build-vision-spark/
+/.venv-build/
