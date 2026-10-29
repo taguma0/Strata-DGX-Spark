@@ -17,6 +17,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 import setup  # noqa: E402
 
+# The fork's host adaptation: these tests describe an x86 PC on any host (the CUDA repo URL picks
+# sbsa on ARM64); the fork reads the ARM64 global, so pin it off here.
+setup.ARM64 = False
+
 
 class AptRepo(unittest.TestCase):
     def test_known_and_unknown_distros(self):
