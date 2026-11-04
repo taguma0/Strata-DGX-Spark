@@ -242,20 +242,31 @@ SLOT_RESERVE_MIB = 700       # the engine's default --vram-reserve-mib
 DEFAULT_CONTEXT = 131072     # --max-context when the arguments name none (the 128K default)
 
 #: model families (strata launch --family) the drafter was trained for and measured on: Qwen3.8-Flash-Next, its Gyro build and Unsloth's quantizations of the same weights
-#: (UD-IQ4_XS, UD-Q4_K_XL...; DFlash2 numbers measured on UD-Q4_K_XL on Strix, R9700 and M5 Max). Not Swift (UkisAI's fine-tune), Coder (ISTA-DASLab's coding version) or NVFP4:
-#: no DFlash2 acceptance numbers for them, they start the MTP.
+#: (UD-IQ4_XS, UD-Q4_K_XL...; DFlash2 numbers measured on UD-Q4_K_XL on Strix, R9700 and M5 Max). Coder (ISTA-DASLab's coding version) and NVFP4:
+#: no DFlash2 numbers for them, they start the MTP.
 SUPPORTED_FAMILIES = ("qwen", "gyro", "unsloth")
+#: Families that share the drafter's architecture (a fine-tune of the same weights: the same hidden size, vocabulary and experts layout)
+#: without acceptance numbers: a start that NAMES ``dflash2`` runs it, Auto keeps the MTP. Swift is UkisAI's fine-tune of
+#: Qwen3.8-Flash-Next (the acceptance numbers land with the dgx-swift-dflash2 measurement on the GB10, gx10, 2026-11-04).
+EXPERIMENTAL_FAMILIES = ("swift",)
 #: The model_name setup.py (and metal/setup_mac.py) write: f"{family name}-{model.lower()}": qwen3.8-flash-next-iq3_s, qwen3.8-flash-next-gyro-gyro-s,
 #: qwen3.8-flash-next-unsloth-ud-q4_k_xl. (Coder is qwen3.8-flash-next-coder-iq1_m, NVFP4 qwen3.8-flash-next-nvfp4-nvfp4: neither matches.) Mirrored in
 #: apps/host/server/native-settings.mjs; tests/drafting.test.mjs keeps the two the same.
 _SUPPORTED_NAME = re.compile(r"^qwen3\.8-flash-next(-gyro-[a-z0-9._-]+|-unsloth-[a-z0-9._-]+|-(q|iq|tq)\d[a-z0-9_.]*)?$", re.IGNORECASE)
+_EXPERIMENTAL_NAME = re.compile(r"^swift(-[a-z0-9._-]+)?$", re.IGNORECASE)   # the names setup.py writes for Swift: swift-1.5-iq2_xs, swift-iq3_xxs
 
 
-def supported_model(model_name: str | None = None, family: str | None = None) -> bool:
-    """DFlash2 is for Qwen3.8-Flash-Next only: by family when it is known (the Terminal), else by the run config's model name."""
+def supported_model(model_name: str | None = None, family: str | None = None, experimental: bool = False) -> bool:
+    """DFlash2 is for Qwen3.8-Flash-Next only: by family when it is known (the Terminal), else by the run config's model name.
+    ``experimental`` also admits EXPERIMENTAL_FAMILIES (a fine-tune with the drafter's architecture): the starts that NAME
+    the drafter pass, Auto does not."""
     if family is not None:
-        return family.lower() in SUPPORTED_FAMILIES
-    return bool(model_name and _SUPPORTED_NAME.match(str(model_name)))
+        fam = family.lower()
+        return fam in SUPPORTED_FAMILIES or (experimental and fam in EXPERIMENTAL_FAMILIES)
+    if not model_name:
+        return False
+    name = str(model_name)
+    return bool(_SUPPORTED_NAME.match(name)) or (experimental and bool(_EXPERIMENTAL_NAME.match(name)))
 
 
 def _here(path: Path) -> bool:
@@ -645,20 +656,22 @@ def vocab_path(args: list[Any], data_dir: str | Path | None = None) -> Path | No
     return shipped if shipped.is_file() else None
 
 
-def can_run_dflash2(model_name: str | None, family: str | None, backend: str | None, archs: Any = None) -> bool:
-    """Is this model one the drafter was made for, and does this computer's engine have the DFlash2 code? (The disk and the mode of the start are not looked at.)"""
-    return bool(supported_model(model_name, family) and ENGINE_SERVES_DFLASH2 and backend is not None and hardware_support(backend, archs).can_run)
+def can_run_dflash2(model_name: str | None, family: str | None, backend: str | None, archs: Any = None, experimental: bool = False) -> bool:
+    """Is this model one the drafter was made for (``experimental``: an EXPERIMENTAL_FAMILIES model counts, for the starts that NAME the drafter),
+    and does this computer's engine have the DFlash2 code? (The disk and the mode of the start are not looked at.)"""
+    return bool(supported_model(model_name, family, experimental) and ENGINE_SERVES_DFLASH2 and backend is not None and hardware_support(backend, archs).can_run)
 
 
 def choice_of(mode: Any, *, model_name: str | None = None, family: str | None = None, backend: str | None = None, archs: Any = None) -> str:
     """The drafter the choice means for this model on this computer, before anything is looked up on disk: ``dflash2``, ``mtp`` or ``off``. Auto is DFlash2 wherever
-    the engine has it (DFLASH2_BACKENDS) and the model is one it was made for, the MTP everywhere else; DFlash2 asked for by name where it cannot run is MTP."""
+    the engine has it (DFLASH2_BACKENDS) and the model is one it was made for, the MTP everywhere else; DFlash2 asked for by name where it cannot run is MTP.
+    A start that NAMES DFlash2 also counts the EXPERIMENTAL_FAMILIES (a fine-tune with the drafter's architecture); Auto never does."""
     asked = normalize(mode)
     if asked == "off":
         return "off"
     if asked == "mtp":
         return "mtp"
-    return "dflash2" if can_run_dflash2(model_name, family, backend, archs) else "mtp"
+    return "dflash2" if can_run_dflash2(model_name, family, backend, archs, experimental=(asked == "dflash2")) else "mtp"
 
 
 def decide(mode: Any, *, klass: str = "other", model_name: str | None = None, family: str | None = None, data_dir: str | Path | None = None,
@@ -672,7 +685,7 @@ def decide(mode: Any, *, klass: str = "other", model_name: str | None = None, fa
         return Decision(asked, "off")
     want = choice_of(asked, model_name=model_name, family=family, backend=backend, archs=archs)
     have_mtp = mtp_here is not False
-    runnable = can_run_dflash2(model_name, family, backend, archs)
+    runnable = can_run_dflash2(model_name, family, backend, archs, experimental=(asked == "dflash2"))
 
     if want == "dflash2":
         reason = NOT_HERE if (blocked or not vocab_here) else NOT_DOWNLOADED if not pack_ready(data_dir) else ""
@@ -683,7 +696,7 @@ def decide(mode: Any, *, klass: str = "other", model_name: str | None = None, fa
     if have_mtp:
         why = ""
         if asked == "dflash2":                      # named, and it cannot run on this model or this computer
-            why = NOT_SUPPORTED if not supported_model(model_name, family) else NOT_SERVED if not ENGINE_SERVES_DFLASH2 else NOT_THIS_CARD
+            why = NOT_SUPPORTED if not supported_model(model_name, family, experimental=True) else NOT_SERVED if not ENGINE_SERVES_DFLASH2 else NOT_THIS_CARD
         return Decision(asked, "mtp", why)
     # the layer is not on this computer: DFlash2 instead when it can run and its pack is here (said), else none (said)
     if runnable and not blocked and vocab_here and pack_ready(data_dir):
@@ -793,8 +806,8 @@ def apply(cfg: dict[str, Any], *, klass: str = "other", data_dir: str | Path | N
     `engine` is the engine program that will start (None: not known, the usual flags): an engine that only takes `--mtp DIR` for the vocabulary gets that
     (still without the MTP layer), and an engine without `--draft-fallback` gets no DFlash2 flag at all (the MTP, said in one line)."""
     args = [str(a) for a in cfg.get("args") or []]
-    if not supported_model(cfg.get("model_name"), family):    # another model: its drafting is not this choice's business (DeepSeek, Swift, Coder, NVFP4, Qwen3.6...)
-        asked = normalize(cfg.get("drafting"))
+    asked = normalize(cfg.get("drafting"))
+    if not supported_model(cfg.get("model_name"), family, experimental=(asked == "dflash2")):    # another model: its drafting is not this choice's business (DeepSeek, Coder, NVFP4, Qwen3.6...)
         if asked == "dflash2":
             cfg["args"] = strip_draft_flags(args)
             return Decision(asked, "mtp", NOT_SUPPORTED)

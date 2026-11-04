@@ -99,12 +99,20 @@ class EveryChoiceOnEveryBackend(Base):
                 self.assertEqual((d.drafter, loaded(args)), ("mtp", {"mtp"}), (backend, mode))
 
     def test_other_families_never_get_dflash2_whatever_is_saved(self):
-        for family in ("coder", "nvfp4", "swift"):
+        for family in ("coder", "nvfp4"):
             for mode in (None, "auto", "mtp", "dflash2"):
                 cfg = self.cfg(family, **({} if mode is None else {"drafting": mode}))
                 d, args = self.apply(cfg, family, "cuda", ("sm_120",))
                 self.assertNotIn("--draft", args, (family, mode))
                 self.assertEqual(loaded(args), {"mtp"}, (family, mode))
+        # Swift (EXPERIMENTAL_FAMILIES): Auto and the MTP keep its own layer; a NAMED dflash2 runs it like the measured families
+        for mode in (None, "auto", "mtp"):
+            cfg = self.cfg("swift", **({} if mode is None else {"drafting": mode}))
+            d, args = self.apply(cfg, "swift", "cuda", ("sm_120",))
+            self.assertNotIn("--draft", args, mode)
+            self.assertEqual(loaded(args), {"mtp"}, mode)
+        d, args = self.apply(self.cfg("swift", drafting="dflash2"), "swift", "cuda", ("sm_120",))
+        self.assertEqual((d.drafter, d.note, loaded(args)), ("dflash2", "", {"dflash2"}), "named Swift runs the drafter")
 
     def test_several_requests_load_the_mtp_alone_for_auto_and_dflash2(self):
         for mode in ("auto", "dflash2"):

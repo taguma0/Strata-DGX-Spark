@@ -124,7 +124,8 @@ test('the Drafting dropdown exists only where there is something to choose: Qwen
   assert.deepEqual(draftingChoices('qwen', true), all);
   assert.deepEqual(draftingChoices('gyro', true), all);
   assert.deepEqual(draftingChoices('unsloth', true), all, "Unsloth's quantizations are the same weights (DFlash2 measured on UD-Q4_K_XL)");
-  for (const family of ['coder', 'swift', 'nvfp4', 'qwen36', 'deepseek41', undefined]) assert.equal(draftingChoices(family, true), null, `${family}, served`);
+  assert.deepEqual(draftingChoices('swift', true), all, "Swift shares the drafter's architecture: the choice is pickable; a named DFlash2 runs, Auto keeps the MTP");
+  for (const family of ['coder', 'nvfp4', 'qwen36', 'deepseek41', undefined]) assert.equal(draftingChoices(family, true), null, `${family}, served`);
   // the app learns it from Control, once, and false until Control answers
   const host = read('../server/native-control.mjs');
   assert.match(host, /dflash2:dflash2Served===true,dflash2Support,dflash2Selq4,dflash2Split\}/);
@@ -164,10 +165,13 @@ test('one drafter per run: Auto is DFlash2 where the engine has it, the same wor
   const code = (await transform(read('../src/lib/drafting.ts'), { loader: 'ts', format: 'esm' })).code;
   const ts = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
   const host = await import('../server/native-settings.mjs');
-  for (const [choice, family, served] of [['auto', 'qwen', true], [undefined, 'gyro', true], ['auto', 'unsloth', true], ['auto', 'swift', true], ['auto', 'nvfp4', true], ['auto', 'qwen', false], ['auto', 'coder', true], ['mtp', 'qwen', true], ['dflash2', 'qwen', true], ['off', 'qwen', true], ['dflash2', 'coder', true]]) {
+  for (const [choice, family, served] of [['auto', 'qwen', true], [undefined, 'gyro', true], ['auto', 'unsloth', true], ['auto', 'swift', true], ['auto', 'nvfp4', true], ['auto', 'qwen', false], ['auto', 'coder', true], ['mtp', 'qwen', true], ['dflash2', 'qwen', true], ['off', 'qwen', true], ['dflash2', 'coder', true], ['dflash2', 'swift', true], ['dflash2', 'swift', false]]) {
     assert.equal(ts.resolveDrafter(choice, family, served), host.resolveDrafter(choice, family, served), `${choice} ${family} ${served}`);
   }
   assert.equal(ts.resolveDrafter('auto', 'qwen', true), 'dflash2');
+  assert.equal(ts.resolveDrafter('dflash2', 'swift', true), 'dflash2', "a named DFlash2 runs on the experimental family");
+  assert.equal(host.resolveDrafter('dflash2', 'swift-1.5-iq2_xs', true), 'dflash2', "the run config name of a Swift model");
+  assert.equal(ts.resolveDrafter('dflash2', 'swift', false), 'mtp', "an engine without the drafter keeps the MTP");
   assert.equal(ts.resolveDrafter('auto', 'qwen', null), 'mtp', 'Control has not answered: the MTP');
   assert.equal(host.resolveDrafter('auto', 'Qwen3.8-Flash-Next-iq3_s', true), 'dflash2', 'a run config model name works too');
   // the names setup.py writes (f"{family name}-{model.lower()}"): Unsloth's quantizations are DFlash2's; Swift, Coder and NVFP4 are not
