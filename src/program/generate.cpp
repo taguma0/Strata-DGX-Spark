@@ -8013,14 +8013,41 @@ int main(int argc, char** argv) {
         // #286: an unbuffered file tier reads the pairs in batches of 64, the next batch while this one is copied
         std::future<void> ahead;
         auto read_batch = [&](int64_t at) { src.prefetch_pairs(profile.data() + at, std::min<int64_t>(64, want - at)); };
-        // mapped reads: advise the next `fill_ahead` pairs so their reads overlap; STRATA_FILL_AHEAD=0 turns it off
+        // mapped reads: advise the next `fill_ahead` pairs so their reads overlap; STRATA_FILL_AHEAD=0 turns it off.
+        // E2 (2026-11-05): per-layer admission used to run UNADVISED, and the cold boot paid for it - 24,576 slots
+        // filled at 587 MB/s (73.1 s) against 9,266 MB/s warm: the serial fill IS the fault stream, so the advise
+        // is the whole boot.  R4.2g skips the pairs a layer cannot take, and the advise must mask them out:
+        // advising a pair the fill will not admit reads its blob for nothing.
         int64_t fill_ahead = 0;
-        if (!per_layer && srcp == &src && !src.unbuffered()) {
+        std::vector<uint8_t> fill_admit;   // per_layer only: 1 = the fill admits this pair, so the advise may follow it
+        if (srcp == &src && !src.unbuffered()) {
             const char* v = std::getenv("STRATA_FILL_AHEAD");
             fill_ahead = v == nullptr ? 256 : std::max(0, std::atoi(v));
-            if (fill_ahead > 0 && !src.advise_pairs(profile.data(), std::min<int64_t>(fill_ahead, want))) fill_ahead = 0;
-            std::fprintf(stderr, "strata generate: the profile fill asks for %lld pairs ahead (STRATA_FILL_AHEAD)\n",
-                         (long long) fill_ahead);
+            if (fill_ahead > 0 && per_layer) {
+                fill_admit.assign((size_t) want, 0);
+                int32_t nl = 0;   // the profile covers every layer: the highest pair's layer + 1
+                for (int64_t i = 0; i < want; ++i) nl = std::max(nl, profile[(size_t) i].first + 1);
+                std::vector<int32_t> taken((size_t) nl, 0), cap((size_t) nl, 0);
+                for (int32_t l = 0; l < nl; ++l) {
+                    int64_t lo = 0, hi = 0;
+                    xcache.layer_slot_range(l, lo, hi);
+                    cap[(size_t) l] = (int32_t) (hi > lo ? hi - lo : 0);
+                }
+                int64_t adv = 0;
+                for (int64_t i = 0; i < want; ++i) {
+                    const int32_t l = profile[(size_t) i].first;
+                    if (l < 0 || l >= nl || taken[(size_t) l] >= cap[(size_t) l]) continue;
+                    ++taken[(size_t) l];
+                    fill_admit[(size_t) i] = 1;
+                    if (adv < fill_ahead) {
+                        if (!src.advise_pairs(profile.data() + i, 1)) { fill_ahead = 0; break; }
+                        ++adv;
+                    }
+                }
+            }
+            if (fill_ahead > 0 && !per_layer && !src.advise_pairs(profile.data(), std::min<int64_t>(fill_ahead, want))) fill_ahead = 0;
+            std::fprintf(stderr, "strata generate: the profile fill asks for %lld pairs ahead (STRATA_FILL_AHEAD)%s\n",
+                         (long long) fill_ahead, per_layer ? ", per-layer masked" : "");
         }
         const auto fill_t0 = std::chrono::steady_clock::now();
         uint64_t fill_bytes = 0;
@@ -8038,7 +8065,8 @@ int main(int argc, char** argv) {
                 else read_batch(i);
                 if (i + 64 < want) ahead = std::async(std::launch::async, [&read_batch](int64_t b) { strata::aux_cpus::pin_current_thread(); read_batch(b); }, i + 64);
             }
-            if (fill_ahead > 0 && i + fill_ahead < want) (void) src.advise_pairs(profile.data() + i + fill_ahead, 1);
+            if (fill_ahead > 0 && i + fill_ahead < want && (!per_layer || fill_admit[(size_t) (i + fill_ahead)]))
+                (void) src.advise_pairs(profile.data() + i + fill_ahead, 1);
             const int32_t slot = xcache.admit(profile[(size_t) i].first, profile[(size_t) i].second);
             if (slot == strata::core::kNotResident) {
                 if (per_layer) continue;
