@@ -51,6 +51,11 @@ inline float bf16_to_f32(uint16_t b) {
 
 // ---- the i-quant multi-token kernels: none; native_expert.cpp falls back to ggml-cpu's vec_dot
 bool iq512_supported(int) noexcept { return false; }
+bool iq512f_supported(int) noexcept { return false; }   // 0.2.12 round 0216: the fused rows probe, answered here (the kernel is x86-only)
+bool q2_rows_512_ok() { return false; }                 // 0.2.12: expert.cpp's VNNI-512 zmm probe (expert.cpp is x86-only)
+void iq512_reference_gu_rows(int, const uint8_t*, size_t, size_t, int, const void* const*, int, float* const*, int, int) {
+    x86_only("the AVX-512 reference gate/up row kernel");   // 0.2.12 round 0216: reached behind iq512f_supported, answered no
+}
 void iq512_gu_rows(int, const uint8_t*, size_t, size_t, int, const void* const*, int, float* const*, int, int) {
     x86_only("the AVX-512 i-quant kernel");
 }
@@ -308,6 +313,18 @@ void nvfp4_256_rows(const uint8_t*, size_t, int, const void* const*, int, float*
 // behind the tq_supported() / tq_kernels_enabled() probes: on Arm64 the probes say no (upstream ggml here has no
 // trellis type, ggml-cpu's vec_dot runs the expert), the row kernels refuse by name.  tq_cpu_parity links the same
 // entry points; it reports and skips on this host, as on a CPU without the trellis packs.
+// 0.2.12: the Q5_0 down rows in 512-bit lanes (iq_avx512.cpp).  native_expert.cpp reaches them behind
+// cpu_vnni_ok(), which is false on Arm64: unreachable, the stub only answers the link.
+void q50_512_down_rows(const uint8_t*, size_t, int, const void* const*, int, float* const*, int, int) {
+    x86_only("the Q5_0 512-bit down row kernel");
+}
+
+// 0.2.12 round 0216: the fused 512-bit gate/up rows (iq_avx512.cpp).  native_expert.cpp reaches them behind
+// the iq512_supported() probe, which answers no on Arm64: unreachable, the stub only answers the link.
+void iq512_fused_gu_rows(int, const uint8_t*, size_t, size_t, int, const void* const*, int, float* const*, int, int) {
+    x86_only("the AVX-512 fused gate/up row kernel");
+}
+
 bool tq_supported(int) noexcept { return false; }
 int tq_kbits(int) noexcept { return 0; }   // the inline tq_block_bytes in the header calls this; the probes gate it off
 TqIsa tq_isa() { return TqIsa::scalar; }
