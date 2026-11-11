@@ -135,6 +135,148 @@
 #endif
 #include "strata/artifact/gguf_reader.hpp"
 #include "strata/core/family_layout.hpp"
+#include "strata/grammar/argmax.hpp"
+#include "strata/grammar/grammar.hpp"
+#include "strata/grammar/schema.hpp"
+#include "strata/core/verify.hpp"
+
+namespace {
+
+/// Grammar enforcement (--grammar GBNF / --grammar-schema JSON Schema; src/grammar, ported from Basalt, MIT):
+/// one Grammar + vocabulary per process, one GrammarState per request, the window enforcement shared by the
+/// serve and generate windows. Post-window (the Guard rule): the first emitted token that leaves the language
+/// truncates the window at its row and takes that row's argmax under the grammar's mask instead - Verifier::
+/// copy_logits, rare, off-graph, every backend the same bits. Refused with --batch (its commit path is Phase 3).
+struct GramEngine {
+    std::once_flag once;
+    bool failed = false;
+    std::shared_ptr<const strata::grammar::Grammar> cli_g;   // the --grammar / --grammar-schema file
+    std::shared_ptr<const strata::grammar::Grammar> req_g;   // the GRAM / GRAMS protocol grammar (null: none)
+    std::string req_key;                                     // its base64 argument, the recompile cache
+    std::shared_ptr<const strata::grammar::Grammar> g;       // the one the windows enforce: req_g when set, else cli_g
+    std::unique_ptr<strata::grammar::Vocab> vocab;
+    std::vector<std::string> bytes;
+    strata::grammar::GrammarState state;
+};
+GramEngine gram;
+
+/// The whole tokenizer.ggml.tokens array. GgufFile deliberately keeps only 64 sample items of any array
+/// (include/strata/artifact/gguf_reader.hpp), so the grammar vocabulary reads the KV section itself - one forward
+/// pass, seeking over every value it does not want.
+bool gram_read_tokens(const std::string& path, std::vector<std::string>& out) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) return false;
+    auto u32 = [&f]() -> uint32_t { uint32_t v = 0; f.read((char*) &v, 4); return v; };
+    auto u64 = [&f]() -> uint64_t { uint64_t v = 0; f.read((char*) &v, 8); return v; };
+    auto rstr = [&f, &u64](std::string& s) { const uint64_t ln = u64(); s.resize((size_t) ln); if (ln) f.read(&s[0], (std::streamsize) ln); };
+    if (u32() != 0x46554747u || !f) return false;   // "GGUF"
+    (void) u32();
+    const uint64_t n_tensors = u64(), n_kv = u64();
+    static const int szof[13] = {1, 1, 2, 2, 4, 4, 4, 1, 0, -1, 8, 8, 8};   // STRING variable, ARRAY special
+    for (uint64_t i = 0; i < n_tensors && f; ++i) {   // skip the tensor infos: name, dims, type, offset
+        f.seekg((std::streamoff) u64(), std::ios::cur);
+        const uint32_t nd = u32();
+        f.seekg((std::streamoff) nd * 8 + 4 + 8, std::ios::cur);
+    }
+    for (uint64_t i = 0; i < n_kv && f; ++i) {
+        std::string key; rstr(key);
+        const uint32_t t = u32();
+        if (t == 9) {   // ARRAY: element type, then count of items
+            const uint32_t elem = u32();
+            const uint64_t cnt = u64();
+            if (key == "tokenizer.ggml.tokens" && elem == 8 && cnt <= (1u << 25)) {
+                out.reserve((size_t) cnt);
+                for (uint64_t k = 0; k < cnt && f; ++k) { std::string s; rstr(s); out.push_back(std::move(s)); }
+                return f && out.size() == cnt;
+            }
+            if (elem < 13 && szof[elem] > 0) f.seekg((std::streamoff) cnt * szof[elem], std::ios::cur);
+            else if (elem == 8) for (uint64_t k = 0; k < cnt && f; ++k) { std::string s; rstr(s); }
+            else return false;   // a nested array before the tokens: bail rather than drift out of sync
+        } else if (t == 8) { std::string s; rstr(s); }
+        else if (t < 13 && szof[t] > 0) f.seekg((std::streamoff) szof[t], std::ios::cur);
+        else return false;
+    }
+    return false;   // no tokenizer.ggml.tokens
+}
+
+/// One line of base64 back to bytes: the serve GRAM / GRAMS argument (GBNF and JSON Schema both carry newlines,
+/// which the line protocol cannot; false for anything else than padded base64).
+bool gram_b64(const std::string& in, std::string& out, std::string& err) {
+    static const char* A = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    int acc = 0, bits = 0;
+    for (size_t i = 0; i < in.size() && in[i] != '='; ++i) {
+        const size_t v = std::string(A).find(in[i]);
+        if (v == std::string::npos) { err = "not base64"; return false; }
+        acc = (acc << 6) | (int) v; bits += 6;
+        if (bits >= 8) { out.push_back((char) ((acc >> (bits - 8)) & 0xFF)); bits -= 8; }
+    }
+    return true;
+}
+
+void gram_setup(GramEngine& G, const std::string& gbnf_path, const std::string& schema_path, const std::string& shard,
+                const std::vector<int64_t>& eos, int batch) {
+    std::call_once(G.once, [&] {
+        std::string ge;
+        if (batch > 0) ge = "enforced in the solo windows only (--batch is on)";
+        if (ge.empty() && !gbnf_path.empty() && !schema_path.empty()) ge = "--grammar and --grammar-schema are mutually exclusive";
+        std::string gbnf;
+        if (ge.empty() && !schema_path.empty()) {
+            std::ifstream sf(schema_path, std::ios::binary);
+            const std::string schema((std::istreambuf_iterator<char>(sf)), std::istreambuf_iterator<char>());
+            if (schema.empty()) ge = "cannot read " + schema_path;
+            else gbnf = strata::grammar::json_schema_to_gbnf(schema, ge);
+        }
+        if (ge.empty() && !gbnf_path.empty()) {
+            std::ifstream gf(gbnf_path, std::ios::binary);
+            gbnf = std::string((std::istreambuf_iterator<char>(gf)), std::istreambuf_iterator<char>());
+            if (gbnf.empty()) ge = "cannot read " + gbnf_path;
+        }
+        // the CLI grammar only when one was asked for: a plain GRAM/GRAMS request reaches setup with neither path
+        const bool cli = !gbnf_path.empty() || !schema_path.empty();
+        if (ge.empty() && cli) G.cli_g = strata::grammar::Grammar::parse(gbnf, ge);
+        if (ge.empty() && cli && !G.cli_g) ge = "grammar parse: " + ge;
+        if (ge.empty() && !gram_read_tokens(shard, G.bytes)) ge = "tokenizer.ggml.tokens missing from " + shard;
+        if (ge.empty()) {
+            std::vector<int32_t> ends;
+            for (int64_t id : eos) ends.push_back((int32_t) id);
+            G.vocab = std::make_unique<strata::grammar::Vocab>(G.bytes, std::move(ends));
+            G.g = G.req_g ? G.req_g : G.cli_g;   // whichever grammar is set: setup may run after a GRAM line (its vocab is what this call loads)
+            // reset() on a default-constructed state dereferences a null arena_: build only over a real grammar
+            if (G.g != nullptr) G.state = strata::grammar::GrammarState(G.g);
+        }
+        if (!ge.empty()) {
+            G.failed = true;
+            std::printf("ERR grammar: %s\n", ge.c_str());
+            std::fflush(stdout);
+        }
+    });
+}
+
+/// 0: the whole emitted prefix stands. 1: row i violated - outv[i] is now the masked resample and a == i.
+/// 2: the grammar dead-ended (no allowed token at all): stop the request, the committed state stands.
+int gram_window(GramEngine& G, strata::core::Verifier& ver, int& a, int32_t* outv) {
+    for (int i = 0; i <= a; ++i) {
+        const int32_t tok = outv[i];
+        const std::string tb = tok >= 0 && (size_t) tok < G.bytes.size() ? G.bytes[(size_t) tok] : std::string();
+        if (G.state.allows(tb, tok)) { G.state.accept(tb, tok); continue; }
+        std::vector<uint8_t> mask(G.vocab->size(), 0);
+        G.state.fill_mask(*G.vocab, mask);
+        std::vector<float> row((size_t) ver.vocab());
+        int32_t fix = -1;
+        if (ver.copy_logits(i, row.data()))
+            fix = strata::grammar::argmax_masked(row.data(), mask.data(), (int) std::min(row.size(), mask.size()));
+        if (fix < 0) return 2;
+        outv[i] = fix;
+        const std::string fb = (size_t) fix < G.bytes.size() ? G.bytes[(size_t) fix] : std::string();
+        G.state.accept(fb, fix);
+        a = i;
+        return 1;
+    }
+    return 0;
+}
+
+}  // namespace
+#include <fstream>
 #if defined(STRATA_HAVE_QWEN35)
 #include "strata/qwen35/engine.hpp"
 #endif
@@ -905,6 +1047,10 @@ struct Options {
     /// Stop when the model emits an end-of-turn token (<|endoftext|> 248044, <|im_end|> 248046, or --eos-ids).
     bool stop_eos = false;
     std::vector<int64_t> eos_ids = {248044, 248046};
+    /// grammar (src/grammar, ported from Basalt, MIT): --grammar is a GBNF file to enforce over every answer of
+    /// the solo decode windows; --grammar-schema is a JSON Schema file (its JSON object). Refused with --batch.
+    std::string grammar_gbnf;
+    std::string grammar_schema;
     bool spec_split = false;   ///< opt-in split verify window (the overlap study: ~7% slower; not bit-exact against no-split, the batch shape of its windows differs)
     /// --serve, multi-GPU layer split: "K" or "K1,K2,.." (the first layer of each later stage) or "auto" (placed
     /// from each GPU's free VRAM); empty = one GPU
@@ -3609,6 +3755,8 @@ int main(int argc, char** argv) {
         else if (a == "--split-skip-if-fits") o.split_skip_if_fits = true;
         else if (a == "--pcie-mode") o.pcie_mode = next("--pcie-mode");
         else if (a == "--serve") o.serve = true;
+        else if (a == "--grammar") o.grammar_gbnf = next("--grammar");
+        else if (a == "--grammar-schema") o.grammar_schema = next("--grammar-schema");
         else if (a == "--vision") o.vision = true;
         else if (a == "--session-save-reclaim") o.session_save_reclaim = true;
         else if (a == "--prompt-cache") o.prompt_cache = std::max(0, std::atoi(next("--prompt-cache")));
@@ -9770,6 +9918,10 @@ int main(int argc, char** argv) {
     //
     //     GEN <max_new> <id,id,...>
     //
+    //     between requests, `GRAM <base64 GBNF>` / `GRAMS <base64 JSON Schema>` enforce a grammar on the following
+    //     requests and `GRAM -` lifts it again - one line of base64 because GBNF carries newlines the protocol cannot
+    //     (docs/GRAMMAR.md); a bad argument answers `ERR grammar: ...` and changes nothing
+    //
     // and each generated token is written to stdout as `T <id>` as soon as its verify window is done, followed by
     //
     //     DONE <generated> <prompt_tokens> <prompt_ms> <decode_ms> <stop|length|cancel|nonfinite> <drafts accepted>
@@ -15508,6 +15660,35 @@ int main(int argc, char** argv) {
                 std::fflush(stdout);
                 continue;
             }
+            // GRAM <base64 GBNF> / GRAMS <base64 JSON Schema> / GRAM -: the next requests answer inside the
+            // language (see GramEngine above). One grammar at a time; it recompiles when the argument changes, so
+            // a conversation keeps sending it with every request at no cost. Silent on success like BCO, ERR like VRAM.
+            if (line.rfind("GRAM ", 0) == 0 || line.rfind("GRAMS ", 0) == 0) {
+                const bool gsch = line[4] == 'S';
+                const char* arg = line.c_str() + (gsch ? 6 : 5);
+                while (*arg == ' ') ++arg;
+                std::string gerr;
+                if (std::strcmp(arg, "-") == 0) { gram.req_g.reset(); gram.req_key.clear(); gram.g = gram.cli_g; }
+                else if (batch_on()) gerr = "enforced in the solo windows only (--batch is on)";
+                else {
+                    const std::string b64 = arg;
+                    if (b64 != gram.req_key) {   // unchanged: keep the compiled grammar
+                        std::string src;
+                        if (!gram_b64(b64, src, gerr)) {
+                        } else {
+                            std::string gbnf;
+                            if (gsch) gbnf = strata::grammar::json_schema_to_gbnf(src, gerr);
+                            else gbnf = std::move(src);
+                            std::shared_ptr<const strata::grammar::Grammar> g;
+                            if (gerr.empty()) g = strata::grammar::Grammar::parse(gbnf, gerr);
+                            if (g == nullptr && gerr.empty()) gerr = "grammar parse";
+                            if (g != nullptr) { gram.req_key = b64; gram.req_g = std::move(g); gram.g = gram.req_g; }
+                    }
+                    }
+                }
+                if (!gerr.empty()) { std::printf("ERR grammar: %s\n", gerr.c_str()); std::fflush(stdout); }
+                continue;
+            }
             // a command may touch the expert cache (a request lends slots, a K/V growth moves them, a session restore
             // quiesces it): a round of the asynchronous tier that the batch windows left in flight lands first
             if (!adapt_tick(true)) {
@@ -18162,6 +18343,13 @@ int main(int argc, char** argv) {
             strata::core::MtpDrafter::DraftResult generation;
             strata::core::gated::Packet proposal; // immutable through the synchronous verifier call
             bool first_window = true;
+            if (!o.grammar_gbnf.empty() || !o.grammar_schema.empty() || gram.g != nullptr) {   // grammar: see the file-scope GramEngine
+                gram_setup(gram, o.grammar_gbnf, o.grammar_schema,
+                           o.native_shards.empty() ? std::string() : o.native_shards.front(), o.eos_ids, o.batch);
+                if (gram.failed) return false;
+            }
+            // a GRAM/GRAMS grammar can change between requests: rebuild the state rather than reset the old one
+            if (gram.g != nullptr) gram.state = strata::grammar::GrammarState(gram.g);   // the request answers inside from its first token
             int64_t produced_n = 0, sfx_windows = 0, sfx_drafts = 0, sfx_ok = 0;
             // STRATA_FOLLOW=<file> (token forcing, measurement only, off by default; tools/force_check.py): one line per request in the order the
             // engine decodes them, comma-separated token ids (an empty line: that request is not forced).  The serial decode windows below
@@ -19304,6 +19492,10 @@ int main(int argc, char** argv) {
                         return std::find(o.eos_ids.begin(), o.eos_ids.end(), (int64_t) y) != o.eos_ids.end();
                     }) - 1;
 #endif
+                if (gram.g != nullptr && !merged && fol == nullptr && gram_window(gram, ver, a, outv.data()) == 2) {
+                    finish = "grammar";   // the grammar dead-ended: what is committed stands, nothing goes out
+                    break;
+                }
                 if (from_sfx) { ++sfx_windows; sfx_drafts += T - 1; sfx_ok += a; }
                 if (chain_n > 0) { ++chain_windows; chain_drafts += chain_n; chain_ok += std::max(0, a - (T_mtp - 1)); }
                 if (!from_sfx && !first_window)
@@ -21153,7 +21345,17 @@ int main(int argc, char** argv) {
             }
             int a = 0;
             while (a < T - 1 && window[(size_t) a + 1] == outv[(size_t) a]) ++a;
-            const bool initial_round = first_window;   // a single-row window: no proposal to learn from
+            const bool initial_round = first_window;
+            if (!o.grammar_gbnf.empty() || !o.grammar_schema.empty()) {   // grammar: see the file-scope GramEngine
+                gram_setup(gram, o.grammar_gbnf, o.grammar_schema,
+                           o.native_shards.empty() ? std::string() : o.native_shards.front(), o.eos_ids, o.batch);
+                if (gram.failed) return 1;
+                if (gram.g != nullptr && initial_round) gram.state = strata::grammar::GrammarState(gram.g);   // the answers are inside from token one
+            }
+            if (gram.g != nullptr && follow.empty() && gram_window(gram, ver, a, outv.data()) == 2) {
+                std::fprintf(stderr, "strata generate: the grammar dead-ended\n");
+                break;
+            }   // a single-row window: no proposal to learn from
             if (first_window) {
                 first_window = false;
                 ttft_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_start).count();

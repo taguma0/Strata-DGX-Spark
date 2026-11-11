@@ -192,6 +192,26 @@ function(strata_add_pack_test name needs)
     set_tests_properties(${name} PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED: ")
   endif()
 endfunction()
+# --- grammar engine (port of jesdga95/basalt main@101401ac, MIT): GBNF grammar, JSON-schema/tool-call enforcement.
+# CPU-only; see src/grammar/ATTRIBUTION.md. Tests ported from basalt tests/program/grammar_*.
+add_library(strata_grammar STATIC
+  src/grammar/grammar.cpp src/grammar/schema.cpp src/grammar/schema_convert.cpp
+  src/grammar/json_schema.cpp src/grammar/guard.cpp src/grammar/argmax_masked.cpp)
+target_include_directories(strata_grammar PUBLIC include)
+target_compile_features(strata_grammar PUBLIC cxx_std_20)
+
+option(STRATA_BUILD_GRAMMAR_TESTS "Build the grammar engine tests (ported from basalt)" ON)
+if(STRATA_BUILD_GRAMMAR_TESTS)
+  enable_testing()
+  foreach(_gt grammar_test grammar_schema_test grammar_guard_test argmax_masked_test
+              grammar_llama_parser_test grammar_llama_accept_test grammar_llama_schema_test grammar_llama_state_test)
+    add_executable(${_gt} tests/grammar/${_gt}.cpp)
+    target_link_libraries(${_gt} PRIVATE strata_grammar)
+    target_include_directories(${_gt} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src/grammar)
+    add_test(NAME ${_gt} COMMAND ${_gt})
+  endforeach()
+endif()
+
 option(STRATA_BUILD_CONVERSATION_TESTS "Build standalone conversation cache tests" OFF)
 option(STRATA_WERROR "Treat compiler warnings as errors" OFF)
 # #2027: defined here, before the GPU section reads it to register the native-expert tests (it was defined at the

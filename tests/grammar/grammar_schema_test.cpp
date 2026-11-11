@@ -1,0 +1,461 @@
+// tests/program/grammar_schema_test.cpp - schema-to-GBNF and the tool-call grammar, checked by running JSON text and
+// tool-call text through the parsed grammar.
+#include "tool_form_fixture.hpp"
+#include "strata/grammar/grammar.hpp"
+#include "strata/grammar/schema.hpp"
+
+#include <cstdio>
+#include <string>
+
+using namespace strata::grammar;
+
+static int g_fail = 0;
+#define CHECK(c)                                                              \
+    do {                                                                      \
+        if (!(c)) { std::printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); ++g_fail; } \
+    } while (0)
+
+static std::shared_ptr<const Grammar> build(const std::string& schema) {
+    std::string err;
+    std::string gbnf = json_schema_to_gbnf(schema, err);
+    if (gbnf.empty()) { std::printf("schema error: %s\n", err.c_str()); return nullptr; }
+    auto g = Grammar::parse(gbnf, err);
+    if (!g) std::printf("grammar error: %s\n--- grammar ---\n%s\n", err.c_str(), gbnf.c_str());
+    return g;
+}
+static bool ok(const std::shared_ptr<const Grammar>& g, const std::string& text) {
+    GrammarState s(g);
+    for (char c : text) if (!s.accept(std::string_view(&c, 1))) return false;
+    return s.accepting();
+}
+static bool pre(const std::shared_ptr<const Grammar>& g, const std::string& text) {
+    GrammarState s(g);
+    for (char c : text) if (!s.accept(std::string_view(&c, 1))) return false;
+    return true;
+}
+
+static void test_scalars() {
+    auto b = build(R"({"type":"boolean"})");
+    CHECK(b && ok(b, "true") && ok(b, "false") && !pre(b, "True") && !pre(b, "tru e"));
+    auto n = build(R"({"type":"null"})");
+    CHECK(n && ok(n, "null") && !pre(n, "None"));
+    auto i = build(R"({"type":"integer"})");
+    CHECK(i && ok(i, "-12") && ok(i, "0") && !pre(i, "1.") && !pre(i, "01"));
+    auto f = build(R"({"type":"number"})");
+    CHECK(f && ok(f, "1.5e-3") && ok(f, "-0.25") && !pre(f, "1,5"));
+    auto s = build(R"({"type":"string"})");
+    CHECK(s && ok(s, "\"a b\\n\\u00e9\"") && !pre(s, "\"a\nb") && !pre(s, "a"));
+    auto sl = build(R"({"type":"string","minLength":2,"maxLength":3})");
+    CHECK(sl && !ok(sl, "\"a\"") && ok(sl, "\"ab\"") && ok(sl, "\"abc\"") && !pre(sl, "\"abcd"));
+    auto d = build(R"({"type":"string","format":"date"})");
+    CHECK(d && ok(d, "\"2026-10-21\"") && !pre(d, "\"2026-13"));
+    auto u = build(R"({"type":"string","format":"uuid"})");
+    CHECK(u && ok(u, "\"123e4567-e89b-12d3-a456-426614174000\"") && !pre(u, "\"123g"));
+}
+
+static void test_enum_const() {
+    auto e = build(R"({"enum":["red","green",3,null,true]})");
+    CHECK(e && ok(e, "\"red\"") && ok(e, "3") && ok(e, "null") && ok(e, "true") && !pre(e, "\"blue") && !pre(e, "4"));
+    auto c = build(R"({"const":{"a":[1,"x"]}})");
+    CHECK(c && ok(c, "{\"a\":[1,\"x\"]}") && !pre(c, "{\"a\": ["));
+    auto t = build(R"({"type":["string","null"]})");
+    CHECK(t && ok(t, "null") && ok(t, "\"x\"") && !pre(t, "1"));
+    auto a = build(R"({"anyOf":[{"type":"integer"},{"type":"boolean"}]})");
+    CHECK(a && ok(a, "5") && ok(a, "false") && !pre(a, "\"x"));
+}
+
+static void test_object() {
+    auto g = build(R"({"type":"object","properties":{"name":{"type":"string"},"age":{"type":"integer"},"tag":{"type":"string"}},"required":["name","age"]})");
+    CHECK(g);
+    CHECK(ok(g, R"({"name":"a","age":3})"));
+    CHECK(ok(g, R"({"name":"a","age":3,"tag":"x"})"));
+    CHECK(!ok(g, R"({"name":"a"})"));                                   // age is required
+    CHECK(!pre(g, R"({"age":3)"));                                      // order follows the schema
+    CHECK(!pre(g, R"({"name":"a","age":"3")"));                         // wrong type
+    CHECK(!pre(g, R"({"name":"a","age":3,"extra":1)"));                 // no additional properties
+    auto only_opt = build(R"({"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"}}})");
+    CHECK(only_opt && ok(only_opt, "{}") && ok(only_opt, R"({"a":1})") && ok(only_opt, R"({"b":2})") &&
+          ok(only_opt, R"({"a":1,"b":2})") && !pre(only_opt, R"({"b":2,"a")"));
+    auto open = build(R"({"type":"object","additionalProperties":{"type":"integer"}})");
+    CHECK(open && ok(open, R"({"x":1,"y":2})") && !pre(open, R"({"x":"1")"));
+    auto any = build(R"({"type":"object"})");
+    CHECK(any && ok(any, R"({"x":[1,{"y":null}]})"));
+}
+
+static void test_array_nested() {
+    auto a = build(R"({"type":"array","items":{"type":"integer"},"minItems":1,"maxItems":3})");
+    CHECK(a && ok(a, "[1]") && ok(a, "[1,2,3]") && !ok(a, "[]") && !pre(a, "[1,2,3,4") && !pre(a, "[\"x\""));
+    auto free = build(R"({"type":"array"})");
+    CHECK(free && ok(free, "[]") && ok(free, "[1,\"a\",[null]]"));
+    auto tup = build(R"({"type":"array","prefixItems":[{"type":"integer"},{"type":"string"}]})");
+    CHECK(tup && ok(tup, "[1,\"a\"]") && !pre(tup, "[\"a\""));
+    auto nested = build(R"({"type":"object","properties":{"items":{"type":"array","items":{"type":"object","properties":{"id":{"type":"integer"},"ok":{"type":"boolean"}},"required":["id"]}}},"required":["items"]})");
+    CHECK(nested && ok(nested, R"({"items":[{"id":1},{"id":2,"ok":true}]})") && !pre(nested, R"({"items":[{"id":1,"ok":1)"));
+}
+
+static void test_ref() {
+    auto r = build(R"({"$defs":{"pt":{"type":"object","properties":{"x":{"type":"integer"},"y":{"type":"integer"}},"required":["x","y"]}},
+        "type":"object","properties":{"a":{"$ref":"#/$defs/pt"},"b":{"$ref":"#/$defs/pt"}},"required":["a"]})");
+    CHECK(r && ok(r, R"({"a":{"x":1,"y":2}})") && ok(r, R"({"a":{"x":1,"y":2},"b":{"x":3,"y":4}})") &&
+          !pre(r, R"({"a":{"x":1,"y":"2")"));
+    // a recursive reference
+    auto tree = build(R"({"$ref":"#/definitions/node","definitions":{"node":{"type":"object","properties":{"v":{"type":"integer"},"kids":{"type":"array","items":{"$ref":"#/definitions/node"}}},"required":["v"]}}})");
+    CHECK(tree && ok(tree, R"({"v":1,"kids":[{"v":2},{"v":3,"kids":[{"v":4}]}]})") && !pre(tree, R"({"v":1,"kids":[{"kids")"));
+    std::string err;
+    CHECK(json_schema_to_gbnf(R"({"$ref":"#/nope"})", err).empty() && !err.empty());
+    CHECK(json_schema_to_gbnf("{", err).empty());
+}
+
+static const char* kTools = R"([
+  {"name":"get_weather","description":"x","parameters":{"type":"object","properties":{
+      "city":{"type":"string"},"days":{"type":"integer"},"metric":{"type":"boolean"},
+      "unit":{"type":"string","enum":["c","f"]},"tags":{"type":"array","items":{"type":"string"}}},
+    "required":["city","metric"]}},
+  {"name":"ping","parameters":{"type":"object","properties":{}}},
+  {"type":"function","function":{"name":"set_flag","parameters":{"type":"object","properties":{"on":{"type":"boolean"},"note":{}},"required":["on"]}}}
+])";
+
+static bool call_ok(const std::shared_ptr<const Grammar>& g, const std::string& t) { return ok(g, t); }
+
+static void test_tools() {
+    std::string err;
+    std::string gbnf = tool_call_gbnf(kTools, ToolGrammarOptions{}, err);
+    CHECK(!gbnf.empty());
+    auto g = Grammar::parse(gbnf, err);
+    if (!g) std::printf("%s\n%s\n", err.c_str(), gbnf.c_str());
+    CHECK(g);
+    if (!g) return;
+    const std::string head = "<tool_call>\n<function=get_weather>\n";
+    const std::string city = "<parameter=city>\nParis\n</parameter>\n";
+    const std::string metric = "<parameter=metric>\ntrue\n</parameter>\n";
+    CHECK(call_ok(g, head + city + metric + "</function>\n</tool_call>"));
+    CHECK(call_ok(g, head + city + metric + "<parameter=days>\n-3\n</parameter>\n</function>\n</tool_call>"));
+    CHECK(call_ok(g, head + city + metric + "<parameter=unit>\nc\n</parameter>\n</function>\n</tool_call>"));
+    CHECK(call_ok(g, head + city + metric + "<parameter=tags>\n[\"a\", \"b\"]\n</parameter>\n</function>\n</tool_call>"));
+    // a string may hold anything but the closing tag, newlines and angle brackets included
+    CHECK(call_ok(g, head + "<parameter=city>\nline 1\nline <2> </param </parameter\n</parameter>\n" + metric + "</function>\n</tool_call>"));
+    CHECK(!pre(g, head + "<parameter=city>\nab</parameter>"));
+    // a boolean must be JSON
+    CHECK(!pre(g, head + city + "<parameter=metric>\nTrue"));
+    CHECK(!pre(g, head + city + "<parameter=metric>\nyes"));
+    CHECK(pre(g, head + city + "<parameter=metric>\ntrue"));
+    // an integer must be a number
+    CHECK(!pre(g, head + city + "<parameter=days>\n\"3\""));
+    // enum values are the listed ones
+    CHECK(!pre(g, head + city + metric + "<parameter=unit>\nk"));
+    // unknown function and unknown parameter
+    CHECK(!pre(g, "<tool_call>\n<function=get_wether>"));
+    CHECK(pre(g, "<tool_call>\n<function=get_w"));
+    CHECK(!pre(g, head + "<parameter=zip>"));
+    // required parameters in any order, each once; optional ones after them, any order, repeatable
+    CHECK(call_ok(g, head + metric + city + "</function>\n</tool_call>"));
+    CHECK(call_ok(g, head + metric + city + "<parameter=days>\n2\n</parameter>\n<parameter=unit>\nc\n</parameter>\n<parameter=days>\n3\n</parameter>\n</function>\n</tool_call>"));
+    CHECK(!call_ok(g, head + city + "</function>\n</tool_call>"));                    // metric is required
+    CHECK(!pre(g, head + city + "<parameter=city>"));                                // a required one is written once
+    CHECK(!pre(g, head + "<parameter=days>"));                                       // optional ones follow the required
+    CHECK(!pre(g, head + city + metric + city));
+    // no parameters, wrapper form, untyped parameter takes free text
+    CHECK(call_ok(g, "<tool_call>\n<function=ping>\n</function>\n</tool_call>"));
+    CHECK(call_ok(g, "<tool_call>\n<function=set_flag>\n<parameter=on>\nfalse\n</parameter>\n<parameter=note>\nhi there\n</parameter>\n</function>\n</tool_call>"));
+    // two calls
+    CHECK(call_ok(g, "<tool_call>\n<function=ping>\n</function>\n</tool_call>\n<tool_call>\n<function=ping>\n</function>\n</tool_call>"));
+    // stays inactive until the trigger
+    Triggers tr;
+    tr.words = {strata::grammar::tool_form().trigger};
+    GrammarState s(g, tr);
+    CHECK(!s.active());
+    CHECK(s.accept("I will check the weather. Let me <call"));
+    CHECK(!s.active());
+    CHECK(s.accept("<tool_call>"));
+    CHECK(s.active());
+    CHECK(s.accept("\n<function=ping>\n</function>\n</tool_call>"));
+    CHECK(s.accepting());
+    // one call only
+    ToolGrammarOptions one;
+    one.multiple_calls = false;
+    auto g1 = Grammar::parse(tool_call_gbnf(kTools, one, err), err);
+    CHECK(g1 && ok(g1, "<tool_call>\n<function=ping>\n</function>\n</tool_call>") &&
+          !pre(g1, "<tool_call>\n<function=ping>\n</function>\n</tool_call>\n<"));
+    // past max_permute the required parameters keep the declared order
+    ToolGrammarOptions big;
+    big.max_permute = 1;
+    auto gb = Grammar::parse(tool_call_gbnf(kTools, big, err), err);
+    CHECK(gb && ok(gb, head + city + metric + "</function>\n</tool_call>") && !pre(gb, head + metric));
+    CHECK(tool_call_gbnf("[]", ToolGrammarOptions{}, err).empty());
+    CHECK(tool_call_gbnf("[{\"parameters\":{}}]", ToolGrammarOptions{}, err).empty());
+}
+
+static void test_text_unions() {
+    std::string err;
+    auto tool = [&](const std::string& param) {
+        return Grammar::parse(tool_call_gbnf(R"([{"name":"w","parameters":{"type":"object","properties":{"p":)" + param +
+                                                 R"(},"required":["p"]}}])", ToolGrammarOptions{}, err), err);
+    };
+    const std::string head = "<tool_call>\n<function=w>\n<parameter=p>\n";
+    const std::string tail = "\n</parameter>\n</function>\n</tool_call>";
+    // anyOf/oneOf of a string and null (a nullable string): raw text, `null` and constraints included
+    for (const char* form : {R"({"anyOf":[{"type":"string","minLength":1,"maxLength":1000},{"type":"null"}],"title":"P"})",
+                             R"({"oneOf":[{"type":"string"},{"type":"null"}]})",
+                             R"({"anyOf":[{"type":"null"},{"type":"string"}]})",
+                             R"({"anyOf":[{"type":"string"}]})",
+                             R"({"anyOf":[{"type":"string"},{"type":["string","null"]}]})",
+                             R"({"allOf":[{"type":"string"}]})"}) {
+        auto g = tool(form);
+        CHECK(g);
+        if (!g) continue;
+        CHECK(call_ok(g, head + "notes/diagnostics/x.txt" + tail));
+        CHECK(call_ok(g, head + "null" + tail));
+        CHECK(call_ok(g, head + "123" + tail));
+        CHECK(call_ok(g, head + "nope\nline 2 <b>" + tail));
+        CHECK(!pre(g, head + "a</parameter>\n<parameter=q>"));      // the closing tag still ends the value
+    }
+    // not a plain string: stays the JSON value
+    for (const char* form : {R"({"anyOf":[{"type":"string"},{"type":"integer"}]})",
+                             R"({"anyOf":[{"type":"integer"},{"type":"null"}]})",
+                             R"({"anyOf":[{"type":"string","enum":["a","b"]},{"type":"null"}]})",
+                             R"({"anyOf":[{"type":"string"},{"type":"array","items":{"type":"string"}}]})",
+                             R"({"allOf":[{"type":"string"},{"minLength":1}]})"}) {
+        auto g = tool(form);
+        CHECK(g);
+        if (!g) continue;
+        CHECK(!pre(g, head + "notes/x.txt"));
+    }
+    auto mixed = tool(R"({"anyOf":[{"type":"string"},{"type":"integer"}]})");
+    CHECK(mixed && call_ok(mixed, head + "\"x\"" + tail) && call_ok(mixed, head + "5" + tail));
+    auto num = tool(R"({"anyOf":[{"type":"integer"},{"type":"null"}]})");
+    CHECK(num && call_ok(num, head + "null" + tail) && call_ok(num, head + "7" + tail) && !pre(num, head + "x"));
+    // the type-list forms are unchanged
+    auto lst = tool(R"({"type":["string","null"]})");
+    CHECK(lst && call_ok(lst, head + "notes/x.txt" + tail) && call_ok(lst, head + "null" + tail));
+    auto plain = tool(R"({"type":"string"})");
+    CHECK(plain && call_ok(plain, head + "notes/x.txt" + tail));
+    // a $ref to a nullable string
+    auto ref = Grammar::parse(tool_call_gbnf(R"([{"name":"w","parameters":{"type":"object","properties":{"p":{"$ref":"#/$defs/s"}},
+        "required":["p"],"$defs":{"s":{"type":"string"}}}}])", ToolGrammarOptions{}, err), err);
+    CHECK(ref && call_ok(ref, head + "notes/x.txt" + tail));
+}
+
+// Parameters sent as a union of objects ({"properties":{},"oneOf":[...]}): the parameters of every variant are allowed,
+// the discriminator takes every variant's value, and only what all the variants require stays required.
+static void test_union_parameters() {
+    std::string err;
+    auto g = Grammar::parse(tool_call_gbnf(R"([{"name":"automation","parameters":{"type":"object","properties":{},
+        "oneOf":[{"$ref":"#/$defs/view"},{"$ref":"#/$defs/write"}],
+        "$defs":{"id":{"type":"string"},
+                 "view":{"type":"object","properties":{"mode":{"type":"string","enum":["view"]},
+                                                       "id":{"$ref":"#/$defs/id"}},
+                         "required":["mode","id"],"additionalProperties":false},
+                 "write":{"oneOf":[{"$ref":"#/$defs/create"},{"$ref":"#/$defs/delete"}]},
+                 "create":{"type":"object","properties":{"mode":{"type":"string","enum":["create"]},
+                                                         "name":{"type":"string"},"every":{"type":"integer"}},
+                           "required":["mode","name"],"additionalProperties":false},
+                 "delete":{"type":"object","properties":{"mode":{"type":"string","enum":["delete"]},
+                                                         "id":{"$ref":"#/$defs/id"}},
+                           "required":["mode","id"],"additionalProperties":false}}}}])",
+                                           ToolGrammarOptions{}, err), err);
+    if (!g) std::printf("union tool grammar error: %s\n", err.c_str());
+    CHECK(g);
+    if (!g) return;
+    const std::string head = "<tool_call>\n<function=automation>\n";
+    const std::string tail = "</function>\n</tool_call>";
+    auto par = [](const std::string& k, const std::string& v) {
+        return "<parameter=" + k + ">\n" + v + "\n</parameter>\n";
+    };
+    CHECK(call_ok(g, head + par("mode", "create") + par("name", "Disk check") + par("every", "8") + tail));
+    CHECK(call_ok(g, head + par("mode", "view") + par("id", "abc") + tail));
+    CHECK(call_ok(g, head + par("mode", "delete") + par("id", "abc") + tail));
+    CHECK(!pre(g, head + par("mode", "explode")));          // the discriminator is the union of the variants' values
+    CHECK(!pre(g, head + tail));                            // every variant requires mode
+    CHECK(!pre(g, head + par("mode", "view") + "<parameter=bogus>"));
+    CHECK(!pre(g, head + par("mode", "create") + par("every", "x")));   // a merged parameter keeps its type
+}
+
+static void test_request() {
+    std::string err;
+    auto r = grammar_from_request(R"({"kind":"tools","tool_choice":"auto","tools":[{"type":"function","function":{"name":"ping","parameters":{"type":"object","properties":{"n":{"type":"integer"}},"required":["n"]}}},{"type":"function","function":{"name":"pong","parameters":{"type":"object","properties":{}}}}]})", err);
+    CHECK(r.grammar && err.empty() && r.triggers.words.size() == 1);
+    GrammarState s(r.grammar, r.triggers);
+    CHECK(!s.active() && s.accept("ok <tool_call>\n<function=ping>\n<parameter=n>\n5\n</parameter>\n</function>\n</tool_call>") && s.accepting());
+    CHECK(!s.allows("<tool_call>\n<function=pong>\n<parameter=n>"));
+    auto named = grammar_from_request(R"({"kind":"tools","tool_choice":{"type":"function","function":{"name":"pong"}},"tools":[{"type":"function","function":{"name":"ping"}},{"type":"function","function":{"name":"pong"}}]})", err);
+    GrammarState n(named.grammar, named.triggers);
+    CHECK(named.grammar && !n.allows("<tool_call>\n<function=ping>") && n.allows("<tool_call>\n<function=pong>"));
+    auto none = grammar_from_request(R"({"kind":"tools","tool_choice":"none","tools":[{"type":"function","function":{"name":"ping"}}]})", err);
+    CHECK(!none.grammar && err.empty());
+    auto js = grammar_from_request(R"({"kind":"json_schema","schema":{"type":"object","properties":{"a":{"type":"boolean"}},"required":["a"]}})", err);
+    GrammarState j(js.grammar, js.triggers);
+    CHECK(js.grammar && j.active() && j.accept("{\"a\":true}") && j.accepting());
+    GrammarState j2(js.grammar, js.triggers);
+    CHECK(!j2.allows("{\"a\":True"));
+    auto jo = grammar_from_request(R"({"kind":"json_object"})", err);
+    GrammarState o(jo.grammar, jo.triggers);
+    CHECK(jo.grammar && o.accept("{\"x\":[1,{\"y\":null}]}") && o.accepting() && !o.allows("[1]"));
+    CHECK(!grammar_from_request(R"({"kind":"nope"})", err).grammar && !err.empty());
+    // a JSON format with tools: from the first answer token, tool calls or the JSON value
+    err.clear();
+    auto both = grammar_from_request(R"({"kind":"json_schema","schema":{"type":"object","properties":{"title":{"type":"string"}},"required":["title"],"additionalProperties":false},"tools":[{"type":"function","function":{"name":"ping","parameters":{"type":"object","properties":{"n":{"type":"integer"}},"required":["n"]}}}]})", err);
+    CHECK(both.grammar && err.empty() && !both.triggers.lazy());
+    GrammarState b1(both.grammar, both.triggers);
+    CHECK(b1.active() && b1.accept("{\"title\":\"Fix the build\"}") && b1.accepting());
+    GrammarState b2(both.grammar, both.triggers);
+    CHECK(b2.accept("<tool_call>\n<function=ping>\n<parameter=n>\n5\n</parameter>\n</function>\n</tool_call>") && b2.accepting());
+    GrammarState b3(both.grammar, both.triggers);
+    CHECK(!b3.allows("Sure: {") && !b3.allows("{\"name\":") && !b3.allows("<tool_call>\n<function=pong>"));
+    GrammarState b4(both.grammar, both.triggers);
+    CHECK(!b4.allows("<tool_call>\n<function=ping>\n<parameter=n>\n5\n</parameter>\n</function>\n</tool_call>{"));
+    err.clear();
+    auto obj = grammar_from_request(R"({"kind":"json_object","tools":[{"type":"function","function":{"name":"ping"}}]})", err);
+    GrammarState o2(obj.grammar, obj.triggers);
+    CHECK(obj.grammar && err.empty() && o2.accept("{\"x\":1}") && o2.accepting() && !o2.allows("[1]"));
+    CHECK(!grammar_from_request(R"({"kind":"json_object","tools":{}})", err).grammar && !err.empty());
+}
+
+// A pattern or an enum string can decode (a "\u0000" JSON escape) to raw control bytes. They must reach the
+// grammar text as \xNN escapes: the parser walks the text as a C string, so a raw NUL ends it mid-rule.
+static void test_control_escapes() {
+    std::string err;
+    // a nested-object parameter whose string property has a control-byte character class (pi's interactive_shell)
+    std::string gbnf = tool_call_gbnf(R"([
+      {"name":"send","parameters":{"type":"object","properties":{
+          "cfg":{"type":"object","properties":{
+              "input":{"type":"string","pattern":"^[^\u0000-\u001f\u007f;&|`$<>]+$"},
+              "k":{"type":"string","enum":["a\u0000b","c"]}},
+            "required":["input"]}},
+        "required":["cfg"]}}
+    ])", ToolGrammarOptions{}, err);
+    CHECK(!gbnf.empty() && err.empty());
+    CHECK(gbnf.find('\0') == std::string::npos);
+    auto g = Grammar::parse(gbnf, err);
+    if (!g) std::printf("%s\n--- grammar ---\n%s\n", err.c_str(), gbnf.c_str());
+    CHECK(g);
+    if (g) {
+        const std::string head = "<tool_call>\n<function=send>\n<parameter=cfg>\n";
+        CHECK(ok(g, head + R"({"input":"hello world","k":"c"})" + "\n</parameter>\n</function>\n</tool_call>"));
+        CHECK(!pre(g, head + R"({"input":"bad|pipe")"));   // the pattern excludes |
+    }
+    // a schema pattern naming raw control points directly
+    auto p = build(R"({"type":"string","pattern":"^[A\u0000]+$"})");
+    CHECK(p);
+    if (p) {
+        const std::string nul = std::string(1, '\0');
+        CHECK(ok(p, "\"" + nul + "A\"") && ok(p, "\"A\"") && !pre(p, "\"x\""));
+    }
+    // Grammar::parse says what a raw NUL is instead of "unexpected end of input"
+    err.clear();
+    CHECK(!Grammar::parse("root ::= \"" + std::string(1, '\0') + "\"", err) && err.find("NUL") != std::string::npos);
+}
+
+// A form whose text end has characters of several bytes: the free text is checked by character.
+static void test_multibyte_text_end() {
+    const std::string bar = "\xef\xbd\x9c";
+    ToolForm f = tool_form();
+    const ToolForm saved = f;
+    f.param_mid_text = f.param_mid_value = ">";
+    f.param_close = "</" + bar + "p>\n";
+    f.text_end = "</" + bar + "p>";
+    set_tool_form(f);
+    std::string err;
+    auto g = Grammar::parse(tool_call_gbnf(R"([{"name":"w","parameters":{"type":"object","properties":{"c":{"type":"string"}},"required":["c"]}}])",
+                                           ToolGrammarOptions{}, err), err);
+    set_tool_form(saved);
+    if (!g) std::printf("%s\n", err.c_str());
+    CHECK(g);
+    if (!g) return;
+    const std::string head = "<tool_call>\n<function=w>\n<parameter=c>";
+    const std::string end = "</" + bar + "p>\n</function>\n</tool_call>";
+    CHECK(call_ok(g, head + "Paris" + end));
+    CHECK(call_ok(g, head + "a " + bar + " </ </\xef\xbd\x9d" + end));   // a near match and a neighbour character stay text
+}
+
+// Boolean schemas: `true` is the empty schema (any value), `false` has no valid value.
+static void test_boolean_schemas() {
+    std::string err;
+    // the nested `true`, as a client writes it for an any-typed value
+    const char* kFilters = R"([{"type":"function","function":{"name":"search_metadata","parameters":{"type":"object","properties":{
+        "filters":{"type":"array","items":{"type":"object","properties":{"field":{"type":"string"},"value":true},"required":["field","value"]}}},
+        "required":["filters"]}}}])";
+    std::string gbnf = tool_call_gbnf(kFilters, ToolGrammarOptions{}, err);
+    CHECK(!gbnf.empty());
+    auto g = Grammar::parse(gbnf, err);
+    CHECK(g);
+    const std::string head = "<tool_call>\n<function=search_metadata>\n<parameter=filters>\n";
+    const std::string tail = "\n</parameter>\n</function>\n</tool_call>";
+    for (const char* v : {"\"text\"", "12", "-1.5e3", "{\"a\":[1,{\"b\":null}]}", "[1,\"x\",false]", "null", "true", "false"}) {
+        CHECK(g && call_ok(g, head + "[{\"field\":\"f\",\"value\":" + v + "}]" + tail));
+    }
+    CHECK(g && !pre(g, head + "[{\"field\":1"));
+
+    // the same through response_format's grammar request, and with `true` through a $ref
+    auto req = grammar_from_request(R"({"kind":"json_schema","schema":{"type":"object","properties":{"v":{"type":"array","items":{"type":"object","properties":{"value":true},"required":["value"]}}},"required":["v"]}})", err);
+    CHECK(req.grammar && ok(req.grammar, R"({"v":[{"value":{"x":[null]}},{"value":"s"},{"value":3}]})") && !pre(req.grammar, R"({"v":[{"x")"));
+    auto ref = build(R"({"type":"object","properties":{"a":{"$ref":"#/$defs/any"}},"required":["a"],"$defs":{"any":true}})");
+    CHECK(ref && ok(ref, R"({"a":[1,"x"]})") && ok(ref, R"({"a":null})"));
+
+    // true at every position, equal to {}
+    auto top = build("true");
+    CHECK(top && ok(top, "1") && ok(top, "{\"a\":[]}") && ok(top, "\"s\"") && ok(top, "null"));
+    auto items = build(R"({"type":"array","items":true})");
+    CHECK(items && ok(items, "[1,\"a\",null,{}]") && ok(items, "[]"));
+    auto tuple = build(R"({"type":"array","prefixItems":[true,{"type":"integer"}]})");
+    CHECK(tuple && ok(tuple, "[\"x\",1]") && !pre(tuple, "[\"x\",\"y"));
+    auto addl = build(R"({"type":"object","properties":{"a":{"type":"integer"}},"additionalProperties":true})");
+    CHECK(addl && ok(addl, R"({"a":1,"z":[1,2]})"));
+    auto addl_schema = build(R"({"type":"object","additionalProperties":{"type":"integer"}})");
+    CHECK(addl_schema && ok(addl_schema, R"({"z":1})") && !pre(addl_schema, R"({"z":"s)"));
+    auto alt = build(R"({"anyOf":[true,{"type":"integer"}]})");
+    CHECK(alt && ok(alt, "\"x\"") && ok(alt, "3"));
+    auto all = build(R"({"allOf":[true,{"type":"object","properties":{"a":{"type":"integer"}},"required":["a"]}]})");
+    CHECK(all && ok(all, R"({"a":1})"));
+
+    // false: an optional property is never written, additionalProperties false is unchanged, items false is the empty array
+    auto opt = build(R"({"type":"object","properties":{"a":{"type":"integer"},"b":false},"required":["a"]})");
+    CHECK(opt && ok(opt, R"({"a":1})") && !pre(opt, R"({"a":1,"b")"));
+    auto none = build(R"({"type":"object","properties":{"a":{"type":"integer"}},"additionalProperties":false})");
+    CHECK(none && ok(none, R"({"a":1})") && !pre(none, R"({"a":1,"z")"));
+    auto empty = build(R"({"type":"array","items":false})");
+    CHECK(empty && ok(empty, "[]") && !pre(empty, "[1"));
+    auto closed = build(R"({"type":"array","prefixItems":[{"type":"integer"}],"items":false})");
+    CHECK(closed && ok(closed, "[1]") && !pre(closed, "[1,2"));
+    auto alt_false = build(R"({"anyOf":[false,{"type":"integer"}]})");
+    CHECK(alt_false && ok(alt_false, "3") && !pre(alt_false, "\"x"));
+    auto ref_false = build(R"({"type":"object","properties":{"a":{"type":"integer"},"b":{"$ref":"#/$defs/no"}},"required":["a"],"$defs":{"no":false}})");
+    CHECK(ref_false && ok(ref_false, R"({"a":1})") && !pre(ref_false, R"({"a":1,"b")"));
+
+    // a false that nothing can satisfy is a clear error
+    for (const char* bad : {"false",
+                            R"({"type":"object","properties":{"a":false},"required":["a"]})",
+                            R"({"type":"object","properties":{"a":{"$ref":"#/$defs/no"}},"required":["a"],"$defs":{"no":false}})",
+                            R"({"type":"array","items":false,"minItems":1})",
+                            R"({"type":"array","prefixItems":[false]})",
+                            R"({"anyOf":[false,false]})",
+                            R"({"allOf":[{"type":"integer"},false]})"}) {
+        std::string e;
+        CHECK(json_schema_to_gbnf(bad, e).empty() && e.find("false") != std::string::npos);
+    }
+    // as a tool parameter: an optional `false` is dropped, a required one is refused
+    auto param = Grammar::parse(tool_call_gbnf(R"([{"name":"w","parameters":{"type":"object","properties":{"a":{"type":"integer"},"b":false},"required":["a"]}}])",
+                                               ToolGrammarOptions{}, err), err);
+    CHECK(param && call_ok(param, "<tool_call>\n<function=w>\n<parameter=a>\n1\n</parameter>\n</function>\n</tool_call>") &&
+          !pre(param, "<tool_call>\n<function=w>\n<parameter=a>\n1\n</parameter>\n<parameter=b>"));
+    CHECK(tool_call_gbnf(R"([{"name":"w","parameters":{"type":"object","properties":{"b":false},"required":["b"]}}])", ToolGrammarOptions{}, err).empty() &&
+          err.find("false") != std::string::npos);
+}
+
+int main() {
+    set_test_tool_form();
+    test_request();
+    test_scalars();
+    test_enum_const();
+    test_object();
+    test_array_nested();
+    test_ref();
+    test_tools();
+    test_text_unions();
+    test_union_parameters();
+    test_control_escapes();
+    test_multibyte_text_end();
+    test_boolean_schemas();
+    if (g_fail) { std::printf("grammar_schema_test: %d failures\n", g_fail); return 1; }
+    std::printf("grammar_schema_test: ok\n");
+    return 0;
+}

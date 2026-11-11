@@ -477,7 +477,7 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
   add_executable(strata src/program/generate.cpp)
   strata_utf8_manifest(strata)
   target_include_directories(strata PRIVATE ${_strata_gpu_include_directories})
-  target_link_libraries(strata PRIVATE strata_engine strata_prefill strata_spec ${_strata_gpu_runtime_target})
+  target_link_libraries(strata PRIVATE strata_engine strata_prefill strata_spec strata_grammar ${_strata_gpu_runtime_target})
   if(WIN32 AND STRATA_ENABLE_HIP)
     # 0.2.1.2: the ROCm math libraries live in <package>\rocm\bin, which is on PATH only when the launcher starts the engine; load them on first
     # use (main() adds that folder to the DLL search first) so `strata.exe --version` works from the package folder.  amdhip64_7.dll and the
