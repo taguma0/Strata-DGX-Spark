@@ -98,3 +98,6 @@ build-neon/
 /build-spark/
 /build-vision-spark/
 /.venv-build/
+
+# engine binary feed (download cache)
+/engine-feed/
