@@ -4,6 +4,7 @@ cd "$(dirname "$0")"
 
 export PATH=/usr/local/cuda/bin:"$(dirname "$0")"/.venv/bin:$PATH
 rm -f engine/strata
+rm -f engine/strata-vision
 rm -rf build build-vision
 .venv/bin/python -c "import setup; setup.build_engine(setup.gpu_info(), 'gpu', True, setup.get_llama_cpp(), toolkit=13)"
 
