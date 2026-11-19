@@ -50,15 +50,6 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   ([E2 record](../bench/results/2026-11-05-e2-profile-fill-advise/README.md),
   [startup phases](../bench/results/2026-11-05-serve-startup-time/README.md): warm restart 8.3 s).
 
-## Serve: IPv6 - converged to upstream (2026-11-19)
-
-The fork once carried its own IPv6 stack (`ServerV6`, a `url_host()` helper, a `lan_addresses_v6()` probe, a
-V6ONLY-clearing `server_bind`). Upstream's `http_api.Server` now switches to the IPv6 family on a colon address
-and the start-up prints bracket it and offer IPv4 hints; the fork's code converged to upstream's and went.
-(The fork's `server_bind` was shadowed by upstream's fqdn-skipping one in the same class - it never ran.)
-The behavioral tests (`::1` answers, `::` dual-stack on a dual-stack kernel) stayed; the files are back to
-upstream on this point (the gate work below keeps `server.py` in the delta for its own reasons).
-
 ## Serve: the VRAM load gate (5 files)
 
 - `terminal/serve/server.py` (the `vram_fit_start_need` wiring), `terminal/serve/server_parts/engines.py`,
@@ -84,6 +75,9 @@ upstream on this point (the gate work below keeps `server.py` in the delta for i
   on a server without an API key that is everyone on the LAN. The `RunConfigReadOnly` tests in
   `terminal/serve/test_server.py` pin the off/on pair (off: the card loads and saves as always; on: 404/403, the
   file byte-for-byte untouched). The README section "Keep the model settings read-only" is the user-facing story.
+  The same file also carries two IPv6 behavior tests - upstream switches to `AF_INET6` on a colon address, so
+  `::1` answering and `::` dual-stack are pins on upstream's mechanism (the fork had its own IPv6 stack until
+  it converged to upstream's on 2026-11-19, `5a6736bfc`).
 
 ## Setup and tests (16 files)
 
