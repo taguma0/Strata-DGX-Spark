@@ -39,6 +39,7 @@ and GPU), engine 0.1.52, model swift-1.5-iq3_xxs, context 262,144 tokens, 3 runs
   agent answers are not affected.
 - Full record with setup and caveats:
   [bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs](bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs/README.md).
+- Re-measured on 2026-11-19 on the Qwen3.8 Flash Next UD IQ3_XXS build (engine 0.1.62, live serve, `--prefill auto:32768`): chat **59.4 tokens/s** (first token 0.49 s), 4K prompt 1,728 tokens/s, 16K prompt **2,180 tokens/s**, agent decode **55.3 tokens/s**, conversation-cache hit **71%** ([raw record](docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4/README.md)).
 - The CPU expert pool runs on the performance cores only (`--pool-affinity auto`): agent decode +6.2% against the mixed P+E pool with half the workers, prompt reading unchanged ([A/B record](bench/results/2026-10-28-gb10-pool-affinity-ab/README.md)).
 - Replacing the IQ3_XXS gate/up dot with a tuned Arm SDOT kernel (1.26x at 1 token, 3.11x at 4+) changed
   end-to-end prefill/decode by **nothing measurable**: the expert rows are DRAM/GPU-bound, not dot-bound
