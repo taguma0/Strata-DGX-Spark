@@ -48,13 +48,17 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   ([E2 record](../bench/results/2026-11-05-e2-profile-fill-advise/README.md),
   [startup phases](../bench/results/2026-11-05-serve-startup-time/README.md): warm restart 8.3 s).
 
-## Serve: IPv6 and the VRAM load gate (8 files)
+## Serve: IPv6 (3 files)
 
 - `terminal/serve/server.py`, `server_parts/http_api.py` (+`test_server.py`): IPv6 listening. An address with
-  a colon binds the IPv6 family (`::` serves IPv4 too via `V6ONLY` off), URLs bracket IPv6 hosts, and the
-  printed address skips loopback and link-local `fe80::`.
-- `terminal/serve/server_parts/engines.py`, `terminal/serve/server.py`, `terminal/strata_control/vram_fit.py`
-  (+**added** `terminal/serve/test_vram_load_gate.py`, `telemetry.py`): the model **load** gate. `vram_need`
+  a colon binds the IPv6 family (`::` serves IPv4 too via `V6ONLY` off - one socket, both families), URLs
+  bracket IPv6 hosts, and the printed address skips loopback and link-local `fe80::`.
+
+## Serve: the VRAM load gate (5 files; `server.py` shared with IPv6 above)
+
+- `terminal/serve/server.py` (the `vram_fit_start_need` wiring), `terminal/serve/server_parts/engines.py`,
+  `terminal/strata_control/vram_fit.py` (+**added** `terminal/serve/test_vram_load_gate.py`, `telemetry.py`):
+  the model **load** gate. `vram_need`
   raises the gate line above `min_free_vram_mib` - as a number, or `"auto"`, which prices the model's own VRAM
   floor once per start (`vram_fit.start_need_mib()`: context, KV window, drafter, reserve; the higher line wins
   and a hand-set floor is never undercut); `load_wait_s` lets an unloaded model wait for the card to come back
@@ -64,7 +68,6 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   The **unload** side is deliberately unchanged from upstream - on this machine an unload is expensive (the
   46.84 GiB GPU expert cache must be refilled; see the E2 entry above), so the fork invests entirely on the
   load side: gate, price and wait, not new eviction.
-- `terminal/serve/server.py` also carries the fork's dual-stack default used by the chat page and API.
 
 ## Setup and tests (15 files)
 
