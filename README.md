@@ -168,8 +168,6 @@ without a key.
   i-quant size.
 - A GB10 reports no VRAM size (CPU and GPU share one memory). Setup counts **a quarter of the RAM, at most 32 GB,** as
   VRAM so the same bytes are not counted twice.
-- The setup tests that fail on this machine (`test_setup_amd`, `test_setup_golden`, two in `test_setup_choices`, one
-  in `test_setup_unsloth`) fail the same way on the original code here.
 - The Arm64 / GB10 port first landed in `git show 324b0ef`; every upstream release since is merged on top of it.
 
 Original project, releases and documentation: **[github.com/Niko1221/Strata](https://github.com/Niko1221/Strata)**.
