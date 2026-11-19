@@ -1,138 +1,9 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="apps/host/public/brand/strata-lockup-dark.svg">
+    <source media="(prefers-color-scheme: dark)" srcset="../../app/host/public/brand/strata-lockup-dark.svg">
     <img src="../../app/host/public/brand/strata-lockup-light.svg" alt="Strata" width="340">
   </picture>
 </p>
-
-<p align="center"><a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a> · <b>日本語</b> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a></p>
-
-> **これは [Niko1221/Strata](https://github.com/Niko1221/Strata) のフォークで、NVIDIA DGX Spark（GB10、Arm64）でも動きます。**
-> 元のプロジェクトは x86-64 の PC 専用です。DGX Spark のセクションより下は元の README のままで、x86-64 の PC について
-> 書かれています。エンジンの功績はすべて元のプロジェクトにあります。
-
-## NVIDIA DGX Spark（GB10、Arm64）で Strata を動かす
-
-このフォークは Arm64 対応を加えて、GB10 搭載機で Strata を動かせるようにします。確認したのは ASUS GX10（DGX Spark と同じチップ）です。
-PC と同じように、チャット、コード作成、**画像の読み取り**ができます。ここで確認したのは、
-**Qwen3.8-Flash-Next の IQ3_XXS、画像あり、262,144 トークンのコンテキスト**です。ほかのサイズも動くはずですが、**確認していません**。
-
-### どのくらい速い？
-
-ASUS GX10 1 台（DGX Spark と同じ GB10 搭載機。GB10、Arm コア 20、CPU と GPU で共有する 121 GiB のメモリ）、エンジン 0.1.52、モデル swift-1.5-iq3_xxs、コンテキスト 262,144 トークンで測りました。1 テスト 3 回の中央値（範囲も併記）です。
-
-| 測定 | 中央値 | 範囲 |
-| ---: | ---: | ---: |
-| 答えを書く速さ（チャット） | **64 トークン/秒** | 58.6〜84.5 |
-| チャットの最初のトークン | **0.46 秒** | 0.38〜149.95 秒 |
-| 4K プロンプトを読む | **1,456 トークン/秒** | 1,312〜1,470 |
-| 4K の後の最初のトークン | **2.79 秒** | 2.77〜3.10 秒 |
-| 16K プロンプトを読む | **1,653 トークン/秒** | 1,525〜1,669 |
-| 16K の後の最初のトークン | 149 秒 | 9.7〜157 秒 |
-| エージェントセッションの答え | **68 トークン/秒** | 60.1〜77.3 |
-| 会話キャッシュのヒット率 | **70.4%** | セッションあたり 73 トークン再読み取り |
-
-- 答えを書く速さはチャットで **64〜68 トークン/秒**。エージェントでは会話キャッシュが各ターンの過去のトークンの約 70% を再利用し、応答を速く軽く保ちます。
-- 長い**新規**プロンプトがいちばん弱い点です。16K の新規プロンプトの後の最初のトークンまでは 10〜157 秒の幅がありました（チャットとエージェントの安定速度には影響しません）。
-- 条件と注意点をこめた全体の記録:
-  [bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs](bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs/README.md)。
-- CPU の expert プールは P コア（Cortex-X925）だけで動かしています（`--pool-affinity auto`）。P+E 混在プールと比べワーカーを半分に減らしてエージェントの答えが +6% 速く、プロンプト読み取りは同じでした（[A/B 記録](bench/results/2026-10-28-gb10-pool-affinity-ab/README.md)）。
-
-<details>
-<summary>過去の数値（エンジン 0.1.38、2026-10-05 計測）- 歴史記録として維持</summary>
-
-各行 1 回のリクエスト、答えは 128 トークン、貪欲デコードです。
-
-| プロンプトの長さ | プロンプトを読む速さ | 答えを書く速さ |
-| ---: | ---: | ---: |
-| 6,190 トークン | 1,196 トークン/秒 | 37 トークン/秒 |
-| 12,334 トークン | 1,294 トークン/秒 | 40 トークン/秒 |
-| 24,622 トークン | 1,332 トークン/秒 | 39 トークン/秒 |
-| 49,199 トークン | 1,338 トークン/秒 | 38 トークン/秒 |
-| 75,047 トークン | 1,329 トークン/秒 | 39 トークン/秒 |
-| 1,582 トークン | **61 トークン/秒** | 42 トークン/秒 |
-| 431 トークン | **56 トークン/秒** | 15 トークン/秒（起動後の最初のリクエスト） |
-
-- 答えを書く速さは、プロンプトがどれだけ長くても約 **38〜42 トークン/秒**で変わりませんでした。
-- **短いプロンプトは、長いものより約 20 倍遅く**読まれました。理由はまだ分かっていません。
-- 各行 1 回の測定で、マシンが通常利用されている状態で測りました。全体の表、条件、注意点は
-  [bench/results/2026-10-05-dgx-spark-gb10](bench/results/2026-10-05-dgx-spark-gb10/README.md) にあります。
-
-</details>
-
-### インストール
-
-必要なもの：CUDA Toolkit 13（`/usr/local/cuda`、13.0〜13.3 で確認）が入った DGX Spark、`g++`、`git`、IQ3_XXS 用に約 **85 GB の空きディスク**
-（モデル、画像エンコーダ、ドラフト層）。Arm64 用のビルド済みエンジンはないので、初回は setup が**エンジンと画像エンコーダを
-このマシンでコンパイル**します（CUDA カーネルが多いので時間がかかります）。そのあとモデルを Hugging Face からダウンロードします。
-途中で止まっても、同じコマンドをもう一度実行すれば続きから再開します。
-
-```
-git clone https://github.com/shi3z/Strata-DGX-Spark.git
-cd Strata-DGX-Spark
-./setup.sh --yes --family qwen --model IQ3_XXS --vision gpu --no-start
-```
-
-### 起動
-
-```
-./run-iq3_xxs.sh
-```
-
-約 40 GB の expert をメモリに読み込むので、**1〜3 分のあいだマシンが重くなることがあります**（初回がいちばん長いです）。
-ターミナルに `ready: http://127.0.0.1:8080/v1` と出たら、ブラウザで **http://127.0.0.1:8080** を開くとチャット画面です
-（画像もここで追加できます）。動作確認は次のコマンドでもできます。
-
-```
-curl http://127.0.0.1:8080/health
-```
-
-API は OpenAI / Anthropic 互換です：`http://127.0.0.1:8080/v1`（詳細は [DETAILS.md](docs/DETAILS.md#using-it)）。
-8080 番ポートがほかのプログラムに使われているときは、別のポートで手動起動します。
-
-```
-.venv/bin/python serve/server.py --engine strata --config strata-iq3_xxs.json --port 8081
-```
-
-### モデル設定を変更不能にする (任意)
-
-チャット画面の Settings は、モデル設定（run config の `strata-<model>.json`）をブラウザから変更できます。API key なしで空いているサーバーでは、画面を開ける人は誰でも保存できます。これを拒否したい場合は `STRATA_RUN_CONFIG_RO=1` で起動します:
-
-```bash
-STRATA_RUN_CONFIG_RO=1 ./setup.sh --start
-```
-
-すべての保存が拒否 (403) され、設定カードは画面から消えます。チャット、API、モデルそれ自身は無邊で、ファイルは変わりません。
-
-### ほかの端末からチャット画面を開く（Tailscale）
-
-DGX Spark の tailnet アドレスだけで待ち受け（`0.0.0.0` ではありません）、ほかの端末が使う名前を許可します。
-
-```
-TS_IP=$(tailscale ip -4)
-TS_NAME=$(tailscale status --json | python3 -c "import json,sys; print(json.load(sys.stdin)['Self']['DNSName'].rstrip('.'))")
-STRATA_ALLOWED_HOSTS="$TS_NAME,$TS_IP" .venv/bin/python serve/server.py --engine strata \
-  --config strata-iq3_xxs.json --host "$TS_IP" --port 8081
-```
-
-そのあと、tailnet 内の端末から `http://<TS_NAME>:8081/` を開きます。到達できるのは tailnet 内の端末だけですが、
-**tailnet 内の誰でもモデルを使えます**。キーを必須にするには、`strata-iq3_xxs.json` に `"api_key": "<長い秘密の文字列>"`
-を追加してください（チャット画面がキーを聞いてきます）。キーなしで `127.0.0.1` や tailnet アドレスの外に公開しないでください。
-
-### x86-64 版との違いと、未対応のこと
-
-- Strata 独自の AVX-512 / AVX-2 の CPU カーネルは x86 専用で、Arm64 では**ビルドされません**。i-quant の expert
-  （IQ2_XS、IQ3_XXS、IQ3_S など）は代わりに ggml-cpu の NEON コードで動くので、**Arm 向けに調整したカーネルはまだありません**。
-- 本来の **Q2_0 pack の CPU カーネルは x86 専用**です。Arm64 では起動時にメッセージを出して止まります。i-quant のサイズを使ってください。
-- GB10 は VRAM の大きさを報告しません（CPU と GPU が 1 つのメモリを共有）。setup は同じバイトを二重に数えないよう、
-  **RAM の 4 分の 1（最大 32 GB）**を VRAM として扱います。
-- このマシンで失敗する setup のテスト（`test_setup_amd`、`test_setup_golden`、`test_setup_choices` の 2 件、
-  `test_setup_unsloth` の 1 件）は、元のコードでもここで同じように失敗します。
-- 変更は 1 つのコミットにまとまっています：`git show 324b0ef`
-
-元のプロジェクト、リリース、ドキュメント：**[github.com/Niko1221/Strata](https://github.com/Niko1221/Strata)**
-
----
 
 <h3 align="center">あなた自身のパソコンで、高性能な AI を。</h3>
 <p align="center">チャット、コーディング、画像の処理を、すべてローカルで。</p>
@@ -284,16 +155,24 @@ strata launch
 
 Strata を支えてくださるすべての方に感謝します。
 
-<!-- supporters:start (one line per public supporter, newest last; copy a line and change the GitHub name in all four places) -->
-<a href="https://github.com/ryan4yin"><img src="https://github.com/ryan4yin.png?size=96" width="48" height="48" alt="ryan4yin" title="ryan4yin"></a>
-<a href="https://github.com/themactep"><img src="https://github.com/themactep.png?size=96" width="48" height="48" alt="themactep" title="themactep"></a>
-<a href="https://github.com/macintog"><img src="https://github.com/macintog.png?size=96" width="48" height="48" alt="macintog" title="macintog"></a>
-<a href="https://github.com/bisonbet"><img src="https://github.com/bisonbet.png?size=96" width="48" height="48" alt="bisonbet" title="bisonbet"></a>
-<a href="https://github.com/vizv"><img src="https://github.com/vizv.png?size=96" width="48" height="48" alt="vizv" title="vizv"></a>
-<a href="https://github.com/kod88vn"><img src="https://github.com/kod88vn.png?size=96" width="48" height="48" alt="kod88vn" title="kod88vn"></a>
-<a href="https://github.com/seoulworker"><img src="https://github.com/seoulworker.png?size=96" width="48" height="48" alt="seoulworker" title="seoulworker"></a>
-<a href="https://github.com/jackyini"><img src="https://github.com/jackyini.png?size=96" width="48" height="48" alt="jackyini" title="jackyini"></a>
-<a href="https://github.com/router0mail"><img src="https://github.com/router0mail.png?size=96" width="48" height="48" alt="router0mail" title="router0mail"></a>
+<!-- supporters:start (generated from the public GitHub sponsors: one row per level, the biggest supporters first and largest; private sponsors are not listed) -->
+<a href="https://github.com/codeconduit-official"><img src="https://images.weserv.nl/?url=github.com/codeconduit-official.png&w=240&h=240&fit=cover&mask=circle&output=png" width="120" height="120" alt="codeconduit-official" title="codeconduit-official"></a>
+
+<a href="https://github.com/kod88vn"><img src="https://images.weserv.nl/?url=github.com/kod88vn.png&w=160&h=160&fit=cover&mask=circle&output=png" width="80" height="80" alt="kod88vn" title="kod88vn"></a>
+<a href="https://github.com/router0mail"><img src="https://images.weserv.nl/?url=github.com/router0mail.png&w=160&h=160&fit=cover&mask=circle&output=png" width="80" height="80" alt="router0mail" title="router0mail"></a>
+<a href="https://github.com/kingdonb"><img src="https://images.weserv.nl/?url=github.com/kingdonb.png&w=160&h=160&fit=cover&mask=circle&output=png" width="80" height="80" alt="kingdonb" title="kingdonb"></a>
+<a href="https://github.com/Daisame"><img src="https://images.weserv.nl/?url=github.com/Daisame.png&w=160&h=160&fit=cover&mask=circle&output=png" width="80" height="80" alt="Daisame" title="Daisame"></a>
+
+<a href="https://github.com/ryan4yin"><img src="https://images.weserv.nl/?url=github.com/ryan4yin.png&w=112&h=112&fit=cover&mask=circle&output=png" width="56" height="56" alt="ryan4yin" title="ryan4yin"></a>
+<a href="https://github.com/themactep"><img src="https://images.weserv.nl/?url=github.com/themactep.png&w=112&h=112&fit=cover&mask=circle&output=png" width="56" height="56" alt="themactep" title="themactep"></a>
+<a href="https://github.com/macintog"><img src="https://images.weserv.nl/?url=github.com/macintog.png&w=112&h=112&fit=cover&mask=circle&output=png" width="56" height="56" alt="macintog" title="macintog"></a>
+<a href="https://github.com/bisonbet"><img src="https://images.weserv.nl/?url=github.com/bisonbet.png&w=112&h=112&fit=cover&mask=circle&output=png" width="56" height="56" alt="bisonbet" title="bisonbet"></a>
+<a href="https://github.com/vizv"><img src="https://images.weserv.nl/?url=github.com/vizv.png&w=112&h=112&fit=cover&mask=circle&output=png" width="56" height="56" alt="vizv" title="vizv"></a>
+<a href="https://github.com/seoulworker"><img src="https://images.weserv.nl/?url=github.com/seoulworker.png&w=112&h=112&fit=cover&mask=circle&output=png" width="56" height="56" alt="seoulworker" title="seoulworker"></a>
+<a href="https://github.com/jaceknoga"><img src="https://images.weserv.nl/?url=github.com/jaceknoga.png&w=112&h=112&fit=cover&mask=circle&output=png" width="56" height="56" alt="jaceknoga" title="jaceknoga"></a>
+<a href="https://github.com/jackyini"><img src="https://images.weserv.nl/?url=github.com/jackyini.png&w=112&h=112&fit=cover&mask=circle&output=png" width="56" height="56" alt="jackyini" title="jackyini"></a>
+<a href="https://github.com/moruku36"><img src="https://images.weserv.nl/?url=github.com/moruku36.png&w=112&h=112&fit=cover&mask=circle&output=png" width="56" height="56" alt="moruku36" title="moruku36"></a>
+<a href="https://github.com/hrkgk"><img src="https://images.weserv.nl/?url=github.com/hrkgk.png&w=112&h=112&fit=cover&mask=circle&output=png" width="56" height="56" alt="hrkgk" title="hrkgk"></a>
 <!-- supporters:end -->
 
 すべての支援者と Strata の支援方法は [SUPPORTERS.md](../../SUPPORTERS.md) をご覧ください。
