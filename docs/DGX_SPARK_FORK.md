@@ -22,8 +22,8 @@ git diff --shortstat upstream/main main
 git diff --name-status upstream/main main -- ':(exclude)bench/*' ':(exclude)docs/bench-results/*'
 ```
 
-Everything under "Bench records" below comes from the third command; the area lists below were written
-from the same output and should be re-derived, not hand-extended, after a big upstream merge.
+The area lists below were written from the second command and the bench index from the third - re-derive
+both, do not hand-extend them, after a big upstream merge.
 
 ## Engine (14 files)
 
@@ -98,93 +98,5 @@ GitHub plumbing that does not run (or does not make sense) on a fork: the 4 `ISS
 `SUPPORTERS.md`; `tools/requant_dense_gguf.py` (**added**, requantizing the dense layers) and
 `tools/docker/build.sh`.
 
-## Bench records (this fork's evidence, 86 folders)
-
-New in the fork, kept because the README's numbers point at them:
-
-- `bench/results/2026-10-05-dgx-spark-gb10/README.md/`
-- `bench/results/2026-10-05-dgx-spark-gb10/bench.py/`
-- `bench/results/2026-10-05-dgx-spark-gb10/results.json/`
-- `bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs-2/README.md/`
-- `bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs-2/results.json/`
-- `bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs-3/README.md/`
-- `bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs-3/results.json/`
-- `bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs-4/README.md/`
-- `bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs-4/results.json/`
-- `bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs-5/README.md/`
-- `bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs-5/results.json/`
-- `bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs-6/README.md/`
-- `bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs-6/results.json/`
-- `bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs/README.md/`
-- `bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs/results.json/`
-- `bench/results/2026-10-28-gb10-compiler-ab/README.md/`
-- `bench/results/2026-10-28-gb10-pool-affinity-ab/README.md/`
-- `bench/results/2026-10-29-community-gb10-swift-1-5-iq3-xxs-2/README.md/`
-- `bench/results/2026-10-29-community-gb10-swift-1-5-iq3-xxs-2/engine-log-excerpt.txt/`
-- `bench/results/2026-10-29-community-gb10-swift-1-5-iq3-xxs-2/results.json/`
-- `bench/results/2026-10-29-community-gb10-swift-1-5-iq3-xxs-3/README.md/`
-- `bench/results/2026-10-29-community-gb10-swift-1-5-iq3-xxs-3/engine-log-excerpt.txt/`
-- `bench/results/2026-10-29-community-gb10-swift-1-5-iq3-xxs-3/results.json/`
-- `bench/results/2026-10-29-community-gb10-swift-1-5-iq3-xxs/README.md/`
-- `bench/results/2026-10-29-community-gb10-swift-1-5-iq3-xxs/results.json/`
-- `bench/results/2026-10-29-iq3xxs-neon-ab/RESULTS.md/`
-- `bench/results/2026-10-29-iq3xxs-neon-ab/fallback-ggml-neon.txt/`
-- `bench/results/2026-10-29-iq3xxs-neon-ab/sdot-kernel.txt/`
-- `bench/results/2026-10-29-standard-gb10-bca52b7b/README.md/`
-- `bench/results/2026-10-29-standard-gb10-bca52b7b/config.json/`
-- `bench/results/2026-10-29-standard-gb10-bca52b7b/outputs.jsonl/`
-- `bench/results/2026-10-29-standard-gb10-bca52b7b/provenance/chat_template.jinja/`
-- `bench/results/2026-10-29-standard-gb10-bca52b7b/provenance/corpus-build.json/`
-- `bench/results/2026-10-29-standard-gb10-bca52b7b/provenance/corpus-manifest.sha256/`
-- `bench/results/2026-10-29-standard-gb10-bca52b7b/results.json/`
-- `bench/results/2026-11-04-community-gb10-swift-1-5-iq3-xxs-2/README.md/`
-- `bench/results/2026-11-04-community-gb10-swift-1-5-iq3-xxs-2/results.json/`
-- `bench/results/2026-11-04-community-gb10-swift-1-5-iq3-xxs-df2/README.md/`
-- `bench/results/2026-11-04-community-gb10-swift-1-5-iq3-xxs-df2/results.json/`
-- `bench/results/2026-11-04-community-gb10-swift-1-5-iq3-xxs/README.md/`
-- `bench/results/2026-11-04-community-gb10-swift-1-5-iq3-xxs/results.json/`
-- `bench/results/2026-11-05-e2-profile-fill-advise/README.md/`
-- `bench/results/2026-11-05-ple-queue-depth-p0/README.md/`
-- `bench/results/2026-11-05-serve-startup-time/README.md/`
-- `bench/results/2026-11-07-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-2-stock/README.md/`
-- `bench/results/2026-11-07-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-2-stock/results.json/`
-- `bench/results/2026-11-07-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-2-tuned-VOID/README.md/`
-- `bench/results/2026-11-07-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-2-tuned-VOID/results.json/`
-- `bench/results/2026-11-07-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-2-tuned2/README.md/`
-- `bench/results/2026-11-07-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-2-tuned2/results.json/`
-- `bench/results/2026-11-07-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-3-stock2/README.md/`
-- `bench/results/2026-11-07-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-3-stock2/results.json/`
-- `bench/results/2026-11-07-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs/README.md/`
-- `bench/results/2026-11-07-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs/engine-log-excerpt.txt/`
-- `bench/results/2026-11-07-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs/results.json/`
-- `bench/results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs/README.md/`
-- `bench/results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs/engine-log-excerpt.txt/`
-- `bench/results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs/results.json/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-2/README.md/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-2/results.json/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-3/README.md/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-3/results.json/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-gb1/README.md/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-gb1/results.json/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-gb2/README.md/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-gb2/results.json/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-gc1/README.md/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-gc1/results.json/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-gc2/README.md/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-gc2/results.json/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-np1a/README.md/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-np1a/results.json/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-np1b/README.md/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-np1b/results.json/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-s1/README.md/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-s1/results.json/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-s2/README.md/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-s2/results.json/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-t1/README.md/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-t1/results.json/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-t2/README.md/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4-t2/results.json/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4/README.md/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4/results.json/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs/README.md/`
-- `docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs/results.json/`
+The bench records this fork adds (40 folders of A/B and community evidence) are indexed separately:
+[docs/DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md).
