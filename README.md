@@ -11,7 +11,7 @@
 
 ## Strata on the NVIDIA DGX Spark (GB10, Arm64)
 
-Upstream runs on the Spark too: the official path is the Terminal with a ready-made linux-aarch64 engine ([DGX Spark setup](docs/DGX_SPARK_LINUX.md), IQ3_S or NVFP4). This fork is the delta on top: the UD-IQ3_XXS build tested **with image reading enabled** (upstream leaves the picture reader untested on the Spark and keeps `--vision no`), two tuned Arm SDOT kernels, IPv6 listening and the GB10 fixes carried through every upstream release. Tested here: an ASUS GX10, the same chip as the DGX Spark, **Qwen3.8-Flash-Next UD-IQ3_XXS (Unsloth Dynamic v3.1) with images on, a 262,144-token context**. Other sizes should work but were **not tested**.
+Upstream runs on the Spark too: the official path is the Terminal with a ready-made linux-aarch64 engine ([DGX Spark setup](docs/DGX_SPARK_LINUX.md), IQ3_S or NVFP4). This fork is the delta on top: the UD-IQ3_XXS build tested **with image reading enabled** (upstream leaves the picture reader untested on the Spark and keeps `--vision no`), two tuned Arm SDOT kernels and the GB10 fixes carried through every upstream release. Tested here: an ASUS GX10, the same chip as the DGX Spark, **Qwen3.8-Flash-Next UD-IQ3_XXS (Unsloth Dynamic v3.1) with images on, a 262,144-token context**. Other sizes should work but were **not tested**.
 
 ### How fast is it?
 

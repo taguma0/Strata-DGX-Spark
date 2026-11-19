@@ -49,14 +49,6 @@ class Server(ThreadingHTTPServer):
         super().__init__(server_address, RequestHandlerClass, bind_and_activate)
 
     def server_bind(self):
-        # "::" listens for IPv4 peers too: Windows binds an AF_INET6 socket v6-only by default (Linux honours
-        # bindv6only=0 and serves both); clearing the flag makes a dual-stack listen the same on both, with the
-        # IPv4 peers arriving as ::ffff:192.168.x.x.
-        if self.address_family == socket.AF_INET6 and hasattr(socket, "IPV6_V6ONLY"):
-            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
-        super().server_bind()
-
-    def server_bind(self):
         # http.server's own server_bind also asks socket.getfqdn(host) for a server_name nothing here reads; on a Mac whose reverse lookup
         # stalls (GitHub's macOS runner: 35 s on the first lookup of every new process) each start waited that long before it listened
         socketserver.TCPServer.server_bind(self)

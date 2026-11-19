@@ -7882,31 +7882,6 @@ def lan_addresses() -> list[str]:
     return ([first] if ok(first) else []) + sorted(ip for ip in ips if ok(ip) and ip != first)
 
 
-def lan_addresses_v6() -> list[str]:
-    """This PC's global IPv6 addresses (not loopback, not link-local fe80::/8, not the ::ffff IPv4 forms) - for
-    the "from other devices" line when listening on "::"."""
-    ips = set()
-    try:
-        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET6):
-            ip = info[4][0].split("%", 1)[0]                     # a %scope is a per-interface suffix, not the name
-            if not ip.startswith(("::1", "::ffff:", "fe80", "::")):
-                ips.add(ip)
-    except OSError:
-        pass
-    return sorted(ips)
-
-
-def url_host(host: str) -> str:
-    """A host as it goes in a URL: IPv6 needs brackets ("::1" -> "[::1]")."""
-    return f"[{host}]" if ":" in host else host
-
-
-class ServerV6(Server):
-    """The same server on the IPv6 family: TCPServer.__init__ builds the socket from address_family, so the family
-    must be on the class, not set after construction.  "::" serves IPv4 too (server_bind clears V6ONLY)."""
-    address_family = socket.AF_INET6
-
-
 def host_names_for(bind_host: str, allowed_hosts=(), trusted_origins=()) -> set[str]:
     """Every name this server answers to besides an IP address: localhost, the address it listens on, the config's
     allowed_hosts and trusted_origins' hosts, and - listening beyond this PC (0.0.0.0 or a LAN address) - this PC's
@@ -7928,19 +7903,9 @@ def host_names_for(bind_host: str, allowed_hosts=(), trusted_origins=()) -> set[
 
 
 def serve(svc: Service, host="127.0.0.1", port=8095) -> ThreadingHTTPServer:
-    """host is IPv4 ("127.0.0.1", "0.0.0.0", a LAN address) or IPv6 ("::1", "::", an address): an address with a
-    colon binds the IPv6 family, and "::" serves IPv4 too (Server.server_bind clears V6ONLY)."""
     svc.host_names = host_names_for(host, svc.allowed_hosts, svc.trusted_origins)
     svc.start_telemetry()
-    v6 = ":" in host
-    if v6 and not socket.has_ipv6:
-        raise SystemExit("[strata] this PC has no IPv6: start with --host 0.0.0.0 (or 127.0.0.1) instead")
-    try:
-        httpd = (ServerV6 if v6 else Server)((host, port), make_handler(svc))
-    except OSError as e:
-        raise SystemExit(f"[strata] cannot listen on {host}:{port}: {e}"
-                         + (" (IPv6 is off on this PC: start with --host 0.0.0.0)" if v6 else
-                            " (is the port already in use? run-<model>.bat started twice?)")) from e
+    httpd = Server((host, port), make_handler(svc))
     httpd.svc = svc
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd
@@ -8380,7 +8345,7 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         return 2
     # A key is recommended on a network, never required (owner decision 2026-10-20): the banner below warns once.
     try:                                                # before the minutes of loading: is the port free?
-        (ServerV6 if ":" in a.host else Server)((a.host, a.port), BaseHTTPRequestHandler).server_close()
+        Server((a.host, a.port), BaseHTTPRequestHandler).server_close()
     except OSError as e:
         ap.error(listen_problem(a.host, a.port, e))
     if cfg.get("tokenizer"):
@@ -8735,17 +8700,17 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
     bound_port = httpd.server_address[1]               # --port 0: report the port the OS actually assigned
     svc.start_idle_unload()
     svc.start_vision_idle()
-    here = "::1" if a.host == "::" else "127.0.0.1" if a.host in ("0.0.0.0", "") else a.host
-    print(f"ready: http://{url_host(here)}:{bound_port}/v1  (OpenAI: /v1/chat/completions, Anthropic: /v1/messages, "
+    here = "[::1]" if a.host == "::" else "127.0.0.1" if a.host in ("0.0.0.0", "") else f"[{a.host}]" if ":" in a.host else a.host
+    print(f"ready: http://{here}:{bound_port}/v1  (OpenAI: /v1/chat/completions, Anthropic: /v1/messages, "
           f"context {engine.max_context} tokens{', images on' if vision else ''}"
           f"{', API key required' if svc.api_key else ''})", flush=True)
-    print(f"       open http://{url_host(here)}:{bound_port}/ in a browser to chat; close this window to stop the model", flush=True)
+    print(f"       open http://{here}:{bound_port}/ in a browser to chat; close this window to stop the model", flush=True)
     if a.host not in ("127.0.0.1", "localhost", "::1"):
         # issue #26: reachable from other devices - say at which address, and what can still block it
-        ips = [a.host] if ":" in a.host and a.host != "::" else (lan_addresses_v6() if a.host == "::" else lan_addresses())
+        ips = [f"[{a.host}]"] if ":" in a.host and a.host != "::" else [] if a.host == "::" else lan_addresses()
         for ip in ips:
-            print(f"       from other devices: http://{url_host(ip)}:{bound_port}/   "
-                  f"(API: http://{url_host(ip)}:{bound_port}/v1)", flush=True)
+            print(f"       from other devices: http://{ip}:{bound_port}/   "
+                  f"(API: http://{ip}:{bound_port}/v1)", flush=True)
         if not ips:
             address = "[<this PC's IPv6 address>]" if a.host == "::" else "<this PC's IP address>"
             print(f"       from other devices: http://{address}:{bound_port}/", flush=True)
@@ -8762,7 +8727,7 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         # on its own thread: webbrowser.open waits for the browser launcher, which on Linux can run for as long as
         # the browser does, and the main thread must be free to take Ctrl+C and SIGTERM (#1872)
         threading.Thread(target=webbrowser.open, daemon=True, name="strata-open-browser",
-                         args=(f"http://{url_host(here)}:{bound_port}/",)).start()
+                         args=(f"http://{here}:{bound_port}/",)).start()
     if ready_path is not None or event_sink is not None:
         ready_host = f"[{here}]" if ":" in here and not here.startswith("[") else here
         record = {"schema_version": 1, "instance_id": svc.instance_id, "pid": os.getpid(),

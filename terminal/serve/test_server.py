@@ -6940,8 +6940,8 @@ class RunConfigReadOnly(unittest.TestCase):
 
 
 class IPv6(unittest.TestCase):
-    """--host ::1 and :: bind the IPv6 family (serve() picks AF_INET6 on a colon); "::" serves IPv4 too
-    (Server.server_bind clears V6ONLY; on a v6-only kernel the dual-stack test skips)."""
+    """::1 and :: bind the IPv6 family (upstream's http_api.Server switches the family on a colon address);
+    "::" serves IPv4 too on a dual-stack kernel (on a v6-only kernel the dual-stack test skips)."""
 
     @classmethod
     def setUpClass(cls):
@@ -6974,13 +6974,6 @@ class IPv6(unittest.TestCase):
         finally:
             httpd.shutdown()
             httpd.server_close()
-
-    def test_url_host_brackets(self):
-        from serve.server import url_host
-        self.assertEqual(url_host("::1"), "[::1]")
-        self.assertEqual(url_host("2001:db8::1"), "[2001:db8::1]")
-        self.assertEqual(url_host("127.0.0.1"), "127.0.0.1")
-        self.assertEqual(url_host("example.com"), "example.com")
 
 
 class ToolOrder(unittest.TestCase):

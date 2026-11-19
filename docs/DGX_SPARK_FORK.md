@@ -1,13 +1,11 @@
 # What this fork changes over upstream Strata
 
 Upstream is [Niko1221/Strata](https://github.com/Niko1221/Strata), kept as the `upstream` remote. The
-[DGX Spark section of the README](../README.md#what-is-different-from-the-x86-64-build) states the four
+[DGX Spark section of the README](../README.md#what-is-different-from-the-x86-64-build) states the
 substantive deltas; this page is the file-by-file version of the same claim, so a reviewer can check them
 against the code instead of trusting the prose.
 
-152 files changed, 38108 insertions(+), 869 deletions(-) as measured on 2026-11-19. Of those, 86 are benchmark records
-under `bench/results/` and `docs/bench-results/` (this fork's A/B and community-run evidence, listed at the
-bottom); the code-and-docs delta is **66 files (9 added, 48 modified, 9 deleted)**.
+153 files changed, 38201 insertions(+), 861 deletions(-) as measured on 2026-11-19 after the IPv6 convergence. The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **67 files (11 added, 47 modified, 9 deleted)**.
 
 The sync direction never reverses: every upstream release is merged on top of the port (first landed in
 [`324b0ef`](https://github.com/taguma0/Strata-DGX-Spark/commit/324b0ef)); nothing from this fork is
@@ -48,13 +46,16 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   ([E2 record](../bench/results/2026-11-05-e2-profile-fill-advise/README.md),
   [startup phases](../bench/results/2026-11-05-serve-startup-time/README.md): warm restart 8.3 s).
 
-## Serve: IPv6 (3 files)
+## Serve: IPv6 - converged to upstream (2026-11-19)
 
-- `terminal/serve/server.py`, `server_parts/http_api.py` (+`test_server.py`): IPv6 listening. An address with
-  a colon binds the IPv6 family (`::` serves IPv4 too via `V6ONLY` off - one socket, both families), URLs
-  bracket IPv6 hosts, and the printed address skips loopback and link-local `fe80::`.
+The fork once carried its own IPv6 stack (`ServerV6`, a `url_host()` helper, a `lan_addresses_v6()` probe, a
+V6ONLY-clearing `server_bind`). Upstream's `http_api.Server` now switches to the IPv6 family on a colon address
+and the start-up prints bracket it and offer IPv4 hints; the fork's code converged to upstream's and went.
+(The fork's `server_bind` was shadowed by upstream's fqdn-skipping one in the same class - it never ran.)
+The behavioral tests (`::1` answers, `::` dual-stack on a dual-stack kernel) stayed; the files are back to
+upstream on this point (the gate work below keeps `server.py` in the delta for its own reasons).
 
-## Serve: the VRAM load gate (5 files; `server.py` shared with IPv6 above)
+## Serve: the VRAM load gate (5 files)
 
 - `terminal/serve/server.py` (the `vram_fit_start_need` wiring), `terminal/serve/server_parts/engines.py`,
   `terminal/strata_control/vram_fit.py` (+**added** `terminal/serve/test_vram_load_gate.py`, `telemetry.py`):
