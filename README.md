@@ -11,7 +11,7 @@
 
 ## Strata on the NVIDIA DGX Spark (GB10, Arm64)
 
-Upstream runs on the Spark too: the official path is the Terminal with a ready-made linux-aarch64 engine ([DGX Spark setup](docs/DGX_SPARK_LINUX.md), IQ3_S or NVFP4). This fork is the delta on top: the IQ3_XXS build tested **with image reading enabled** (upstream leaves the picture reader untested on the Spark and keeps `--vision no`), two tuned Arm SDOT kernels, IPv6 listening and the GB10 fixes carried through every upstream release. Tested here: an ASUS GX10, the same chip as the DGX Spark, **Qwen3.8-Flash-Next IQ3_XXS with images on, a 262,144-token context**. Other sizes should work but were **not tested**.
+Upstream runs on the Spark too: the official path is the Terminal with a ready-made linux-aarch64 engine ([DGX Spark setup](docs/DGX_SPARK_LINUX.md), IQ3_S or NVFP4). This fork is the delta on top: the UD-IQ3_XXS build tested **with image reading enabled** (upstream leaves the picture reader untested on the Spark and keeps `--vision no`), two tuned Arm SDOT kernels, IPv6 listening and the GB10 fixes carried through every upstream release. Tested here: an ASUS GX10, the same chip as the DGX Spark, **Qwen3.8-Flash-Next UD-IQ3_XXS (Unsloth Dynamic v3.1) with images on, a 262,144-token context**. Other sizes should work but were **not tested**.
 
 ### How fast is it?
 
@@ -92,15 +92,15 @@ One request per row, 128-token answers, greedy decoding:
 
 **Plain Strata on a Spark:** the upstream [DGX Spark setup](docs/DGX_SPARK_LINUX.md) covers everything - the Terminal with a ready-made linux-aarch64 engine (`install.sh` + `strata launch`, IQ3_S or NVFP4), a source checkout, and building the engine by hand. Take that path unless you want the delta above.
 
-**This fork (IQ3_XXS + image reading):** the same steps as [Install from a source checkout](docs/DGX_SPARK_LINUX.md#install-from-a-source-checkout), with the clone URL and two flags swapped. The feed's engine does not carry this fork's changes, so setup compiles this fork's engine and the image encoder on your machine the first time.
+**This fork (UD-IQ3_XXS + image reading):** the same steps as [Install from a source checkout](docs/DGX_SPARK_LINUX.md#install-from-a-source-checkout), with the clone URL and two flags swapped. The feed's engine does not carry this fork's changes, so setup compiles this fork's engine and the image encoder on your machine the first time.
 
 ```
 git clone https://github.com/taguma0/Strata-DGX-Spark.git
 cd Strata-DGX-Spark
-./setup.sh --yes --family qwen --model IQ3_XXS --vision gpu --no-start
+./setup.sh --yes --family unsloth --model UD-IQ3_XXS --vision gpu --no-start
 ```
 
-The guide's requirements hold here (CUDA Toolkit 13 - 13.0 through 13.3 measured, `g++`, `git`; if a run stops, rerun the same command - it continues). Budget about **85 GB of free disk** for IQ3_XXS (model, image encoder and draft layer).
+The guide's requirements hold here (CUDA Toolkit 13 - 13.0 through 13.3 measured, `g++`, `git`; if a run stops, rerun the same command - it continues). Budget about **85 GB of free disk** for UD-IQ3_XXS (model, image encoder and draft layer).
 
 ### Start it
 
