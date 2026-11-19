@@ -72,6 +72,16 @@ upstream on this point (the gate work below keeps `server.py` in the delta for i
   46.84 GiB GPU expert cache must be refilled; see the E2 entry above), so the fork invests entirely on the
   load side: gate, price and wait, not new eviction.
 
+## Serve: read-only run config (`server.py` + `test_server.py`)
+
+- `STRATA_RUN_CONFIG_RO=1` makes the run config `strata-<model>.json` read-only: GET `/config` answers 404 (the
+  web app already hides the Model settings card when the endpoint does not answer - upstream behavior the fork
+  reuses), POST `/config` answers 403 for every client, the API-key holder included, and a plain line says the
+  mode is on when serve starts. Upstream lets any device that can open the chat page save the model settings -
+  on a server without an API key that is everyone on the LAN. The `RunConfigReadOnly` tests in
+  `terminal/serve/test_server.py` pin the off/on pair (off: the card loads and saves as always; on: 404/403, the
+  file byte-for-byte untouched). The README section "Keep the model settings read-only" is the user-facing story.
+
 ## Setup and tests (16 files)
 
 - `terminal/setup.py`: ARM64 detection as a test-overridable global (golden-style tests set `setup.ARM64 = False`
