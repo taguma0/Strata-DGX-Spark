@@ -38,18 +38,32 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
 - **Modified** `engine/CMakeLists.txt`, `cmake/backends/cpu.cmake`: build the NEON sources on Arm64 and leave
   the x86-only AVX-512/AVX-2 kernels out of the Arm build.
 - **Modified** `src/kernels/cpu/native_expert.cpp`, `expert_layout.cpp`, `include/strata/kernels/cpu/expert.hpp`,
-  `iq_avx2.hpp`, `src/core/native_dense.cpp`, `src/core/verify.cpp`, `src/program/generate.cpp`: the i-quant
-  rows' GB10 path - the NEON include propagation, the f16 scale decode, and the dense-layer GB10 fixes.
+  `iq_avx2.hpp`, `src/core/native_dense.cpp`, `src/core/verify.cpp`: the i-quant rows' GB10 path - the NEON
+  include propagation, the f16 scale decode, and the dense-layer GB10 fixes.
+- **Modified** `src/program/generate.cpp` - **E2, model loading**: the mapped-read readahead
+  (`advise_pairs`, `STRATA_FILL_AHEAD`, default 256) used to gate off for `--expert-cache-per-layer`, which is
+  what the Spark config deploys, so the cold profile fill faulted 24,576 blobs serially at 587 MB/s (73.1 s;
+  warm the same loop runs 9.3 GB/s - the fault stream is the whole cold boot). The advise now covers the
+  per-layer fill, masked to the pairs a layer actually admits: cold fill 2.9x faster, default on
+  ([E2 record](../bench/results/2026-11-05-e2-profile-fill-advise/README.md),
+  [startup phases](../bench/results/2026-11-05-serve-startup-time/README.md): warm restart 8.3 s).
 
 ## Serve: IPv6 and the VRAM load gate (8 files)
 
 - `terminal/serve/server.py`, `server_parts/http_api.py` (+`test_server.py`): IPv6 listening. An address with
   a colon binds the IPv6 family (`::` serves IPv4 too via `V6ONLY` off), URLs bracket IPv6 hosts, and the
   printed address skips loopback and link-local `fe80::`.
-- `terminal/serve/server_parts/engines.py`, `terminal/strata_control/vram_fit.py` (+**added**
-  `terminal/serve/test_vram_load_gate.py`, `telemetry.py`): `vram_need: "auto"` prices the model's own VRAM
-  floor (`start_need_mib()`), `load_wait_s` lets a load wait for the card, and on GB10 - whose unified memory
-  leaves NVML with no frame buffer - the free memory is read through the CUDA driver instead.
+- `terminal/serve/server_parts/engines.py`, `terminal/serve/server.py`, `terminal/strata_control/vram_fit.py`
+  (+**added** `terminal/serve/test_vram_load_gate.py`, `telemetry.py`): the model **load** gate. `vram_need`
+  raises the gate line above `min_free_vram_mib` - as a number, or `"auto"`, which prices the model's own VRAM
+  floor once per start (`vram_fit.start_need_mib()`: context, KV window, drafter, reserve; the higher line wins
+  and a hand-set floor is never undercut); `load_wait_s` lets an unloaded model wait for the card to come back
+  instead of failing (503 + `Retry-After` as before). On GB10 the "free VRAM" the gate waits on comes from the
+  CUDA driver (`cuMemGetInfo` through the primary context, ~0.1 s per read, cached) because NVML reports no
+  frame buffer at all on unified memory (`nvidia-smi` prints `[N/A]`).
+  The **unload** side is deliberately unchanged from upstream - on this machine an unload is expensive (the
+  46.84 GiB GPU expert cache must be refilled; see the E2 entry above), so the fork invests entirely on the
+  load side: gate, price and wait, not new eviction.
 - `terminal/serve/server.py` also carries the fork's dual-stack default used by the chat page and API.
 
 ## Setup and tests (15 files)
