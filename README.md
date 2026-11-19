@@ -1,11 +1,11 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="apps/host/public/brand/strata-lockup-dark.svg">
+    <source media="(prefers-color-scheme: dark)" srcset="app/host/public/brand/strata-lockup-dark.svg">
     <img src="app/host/public/brand/strata-lockup-light.svg" alt="Strata" width="340">
   </picture>
 </p>
 
-<p align="center"><b>English</b> · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a> · <a href="README.de.md">Deutsch</a> · <a href="README.fr.md">Français</a> · <a href="README.es.md">Español</a> · <a href="README.pt-BR.md">Português</a></p>
+<p align="center"><b>English</b> · <a href="docs/lang/README.zh-CN.md">简体中文</a> · <a href="docs/lang/README.ja.md">日本語</a> · <a href="docs/lang/README.de.md">Deutsch</a> · <a href="docs/lang/README.fr.md">Français</a> · <a href="docs/lang/README.es.md">Español</a> · <a href="docs/lang/README.pt-BR.md">Português</a></p>
 
 > **This is a fork of [Niko1221/Strata](https://github.com/Niko1221/Strata) that also runs on the NVIDIA DGX Spark
 > (GB10, Arm64).** The original runs on x86-64 PCs only. Everything below the DGX Spark section is the original
@@ -20,7 +20,31 @@ images on, a 262,144-token context**. Other sizes should work but were **not tes
 ### How fast is it?
 
 Measured on one ASUS GX10 (a GB10 machine like the DGX Spark; GB10, 20 Arm cores, 121 GiB of memory shared by CPU
-and GPU), engine 0.1.52, model swift-1.5-iq3_xxs, context 262,144 tokens, 3 runs per test, medians with ranges:
+and GPU), engine 0.1.62, model Qwen3.8 Flash Next UD IQ3_XXS (the install's own configuration over a live serve,
+`--prefill auto:32768`), context 262,144 tokens, 3 runs per test, medians with ranges:
+
+| Test | Median | Range |
+| ---: | ---: | ---: |
+| Writing answers (chat) | **59.4 tokens/s** | 52.6-104.3 |
+| Chat first token | **0.49 s** | 0.40-6.90 s |
+| Reads a 4K prompt | **1,728 tokens/s** | 1,614-1,731 |
+| First token after a 4K prompt | 5.92 s | 2.52-9.03 s |
+| Reads a 16K prompt | **2,180 tokens/s** | 2,106-2,182 |
+| First token after a 16K prompt | 12.4 s | 11.9-14.6 s |
+| Agent session answers | **55.3 tokens/s** | 44.8-80.0 |
+| Agent conversation-cache hit | **71.0%** | 5 tokens re-read per session |
+
+- Chat and agent answers stay at **55-59 tokens/s**. The agent's conversation cache re-reads about 71% of each
+  turn's earlier tokens, which keeps agent answers fast and cheap.
+- A long *fresh* prompt is still the slow part: the first token after a 16K prompt takes 11.9-14.6 s. Steady chat
+  and agent answers are not affected.
+- Full record with setup and caveats:
+  [docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4](docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4/README.md).
+
+<details>
+<summary>Earlier figures (engine 0.1.52, model swift-1.5-iq3_xxs, measured 2026-10-28) - kept as history</summary>
+
+Same machine and suite, the October install:
 
 | Test | Median | Range |
 | ---: | ---: | ---: |
@@ -33,13 +57,14 @@ and GPU), engine 0.1.52, model swift-1.5-iq3_xxs, context 262,144 tokens, 3 runs
 | Agent session answers | **68 tokens/s** | 60.1-77.3 |
 | Agent conversation-cache hit | **70.4%** | 73 tokens re-read per session |
 
-- Chat and agent answers stay at **64-68 tokens/s**. The agent's conversation cache re-reads about 70% of each
-  turn's earlier tokens, which keeps agent answers fast and cheap.
-- A long *fresh* prompt is the weakest point: the first token after a 16K prompt ranged 10-157 s. Steady chat and
-  agent answers are not affected.
+- Chat and agent answers stayed at **64-68 tokens/s** on the older engine and model; the agent's cache re-read
+  about 70% of each turn's earlier tokens.
+- The first token after a 16K prompt ranged 9.7-157 s there, against 11.9-14.6 s in the 2026-11-19 run above.
 - Full record with setup and caveats:
   [bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs](bench/results/2026-10-28-community-gb10-swift-1-5-iq3-xxs/README.md).
-- Re-measured on 2026-11-19 on the Qwen3.8 Flash Next UD IQ3_XXS build (engine 0.1.62, live serve, `--prefill auto:32768`): chat **59.4 tokens/s** (first token 0.49 s), 4K prompt 1,728 tokens/s, 16K prompt **2,180 tokens/s**, agent decode **55.3 tokens/s**, conversation-cache hit **71%** ([raw record](docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4/README.md)).
+
+</details>
+
 - The CPU expert pool runs on the performance cores only (`--pool-affinity auto`): agent decode +6.2% against the mixed P+E pool with half the workers, prompt reading unchanged ([A/B record](bench/results/2026-10-28-gb10-pool-affinity-ab/README.md)).
 - Replacing the IQ3_XXS gate/up dot with a tuned Arm SDOT kernel (1.26x at 1 token, 3.11x at 4+) changed
   end-to-end prefill/decode by **nothing measurable**: the expert rows are DRAM/GPU-bound, not dot-bound
@@ -82,8 +107,10 @@ cd Strata-DGX-Spark
 
 ### Start it
 
+The same command you installed with, without `--no-start`: on a finished install it just starts the model.
+
 ```
-./run-iq3_xxs.sh
+./setup.sh --yes
 ```
 
 It loads about 40 GB of experts into memory: **the machine can be slow for 1-3 minutes** and the first start is the
@@ -98,7 +125,7 @@ The API is OpenAI- and Anthropic-compatible: `http://127.0.0.1:8080/v1` (more in
 If port 8080 is taken by another program, start it by hand on another port:
 
 ```
-.venv/bin/python serve/server.py --engine strata --config strata-iq3_xxs.json --port 8081
+terminal/.venv/bin/python terminal/serve/server.py --engine strata --config terminal/strata-<model>.json --port 8081
 ```
 
 ### Keep the model settings read-only (optional)
@@ -121,13 +148,13 @@ Listen on the DGX Spark's tailnet address only (not on `0.0.0.0`), and allow the
 ```
 TS_IP=$(tailscale ip -4)
 TS_NAME=$(tailscale status --json | python3 -c "import json,sys; print(json.load(sys.stdin)['Self']['DNSName'].rstrip('.'))")
-STRATA_ALLOWED_HOSTS="$TS_NAME,$TS_IP" .venv/bin/python serve/server.py --engine strata \
-  --config strata-iq3_xxs.json --host "$TS_IP" --port 8081
+STRATA_ALLOWED_HOSTS="$TS_NAME,$TS_IP" terminal/.venv/bin/python terminal/serve/server.py --engine strata \
+  --config terminal/strata-<model>.json --host "$TS_IP" --port 8081
 ```
 
 Then open `http://<TS_NAME>:8081/` from any device on your tailnet. Only devices on your tailnet can reach it, but
 **anyone on the tailnet can use the model**: to require a key, add `"api_key": "<a long secret>"` to
-`strata-iq3_xxs.json` (the chat page then asks for it). Never listen beyond `127.0.0.1` or your tailnet address
+`terminal/strata-<model>.json` (the chat page then asks for it). Never listen beyond `127.0.0.1` or your tailnet address
 without a key.
 
 ### What is different from the x86-64 build, and what is not done
@@ -143,7 +170,7 @@ without a key.
   VRAM so the same bytes are not counted twice.
 - The setup tests that fail on this machine (`test_setup_amd`, `test_setup_golden`, two in `test_setup_choices`, one
   in `test_setup_unsloth`) fail the same way on the original code here.
-- The changes are in one commit: `git show 324b0ef`.
+- The Arm64 / GB10 port first landed in `git show 324b0ef`; every upstream release since is merged on top of it.
 
 Original project, releases and documentation: **[github.com/Niko1221/Strata](https://github.com/Niko1221/Strata)**.
 
