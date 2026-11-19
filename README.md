@@ -113,7 +113,7 @@ The same command you installed with, without `--no-start`: on a finished install
 ./setup.sh --yes
 ```
 
-It loads about 40 GB of experts into memory: **the machine can be slow for 1-3 minutes** and the first start is the
+It fills the GPU expert cache with about 47 GB of experts (the expert files stay memory-mapped, not loaded into RAM): **the machine can be slow for 1-3 minutes** and the first start is the
 longest. When the terminal prints `ready: http://127.0.0.1:8080/v1`, open **http://127.0.0.1:8080** in a browser for
 the chat page (pictures can be added there), or check it:
 
