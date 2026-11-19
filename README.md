@@ -90,15 +90,17 @@ One request per row, 128-token answers, greedy decoding:
 
 ### Install
 
-Plain Strata on a Spark is official upstream now: the Terminal installs the ready-made linux-aarch64 engine and the guide points at IQ3_S or NVFP4 ([DGX Spark setup](docs/DGX_SPARK_LINUX.md)). Install this fork for the delta above - it compiles **this fork's engine** and the image encoder on your machine the first time (a while: it builds many CUDA kernels) and then downloads the model from Hugging Face.
+**Plain Strata on a Spark:** the upstream [DGX Spark setup](docs/DGX_SPARK_LINUX.md) covers everything - the Terminal with a ready-made linux-aarch64 engine (`install.sh` + `strata launch`, IQ3_S or NVFP4), a source checkout, and building the engine by hand. Take that path unless you want the delta above.
 
-You need a DGX Spark with a CUDA Toolkit 13 (`/usr/local/cuda`; 13.0 through 13.3 measured), `g++` and `git`, and about **85 GB of free disk** for IQ3_XXS (model, image encoder and draft layer). If it stops, run the same command again: it continues.
+**This fork (IQ3_XXS + image reading):** the same steps as [Install from a source checkout](docs/DGX_SPARK_LINUX.md#install-from-a-source-checkout), with the clone URL and two flags swapped. The feed's engine does not carry this fork's changes, so setup compiles this fork's engine and the image encoder on your machine the first time.
 
 ```
 git clone https://github.com/shi3z/Strata-DGX-Spark.git
 cd Strata-DGX-Spark
 ./setup.sh --yes --family qwen --model IQ3_XXS --vision gpu --no-start
 ```
+
+The guide's requirements hold here (CUDA Toolkit 13 - 13.0 through 13.3 measured, `g++`, `git`; if a run stops, rerun the same command - it continues). Budget about **85 GB of free disk** for IQ3_XXS (model, image encoder and draft layer).
 
 ### Start it
 
