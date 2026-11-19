@@ -183,6 +183,12 @@ else()
               src/kernels/cpu/expert_layout.cpp src/kernels/cpu/hadamard.cpp)
 endif()
 target_include_directories(strata_kernels_cpu PUBLIC include)
+if(STRATA_CPU_ARM64)
+  # the fork: the NEON i-quant rows (iq4nl_neon.cpp, iq3xxs_neon.cpp) include ggml.h / ggml-common.h.
+  # 0.2.16 stopped linking ggml-base in release builds, so its PUBLIC include dirs no longer carry those
+  # headers; take them from the vendored ggml directly.
+  target_include_directories(strata_kernels_cpu PRIVATE third_party/strata-ggml/ggml/include third_party/ggml)
+endif()
 # expert_layout.cpp (above) names the AVX1 rung of the Q2_0 rows and the activation quantizer; with STRATA_NATIVE_EXPERTS=ON
 # q2_avx1.cpp joins the library in the native-experts section below (default, release builds).  Without it the library has
 # to carry that file itself, or every program that links it fails with undefined *_avx1 symbols.
