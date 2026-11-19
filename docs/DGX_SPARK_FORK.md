@@ -5,7 +5,7 @@ Upstream is [Niko1221/Strata](https://github.com/Niko1221/Strata), kept as the `
 substantive deltas; this page is the file-by-file version of the same claim, so a reviewer can check them
 against the code instead of trusting the prose.
 
-149 files changed, 38135 insertions(+), 696 deletions(-) as measured on 2026-11-19 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size; an earlier header measured against `upstream/main` directly, which quietly counted upstream's own post-base commits as fork delta - the regeneration commands now use the merge-base so that cannot recur). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **63 files (11 added, 43 modified, 9 deleted)**.
+149 files changed, 38147 insertions(+), 696 deletions(-) as measured on 2026-11-19 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size; an earlier header measured against `upstream/main` directly, which quietly counted upstream's own post-base commits as fork delta - the regeneration commands now use the merge-base so that cannot recur). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **63 files (11 added, 43 modified, 9 deleted)**.
 
 The sync direction never reverses: every upstream release is merged on top of the port (first landed in
 [`324b0ef`](https://github.com/taguma0/Strata-DGX-Spark/commit/324b0ef)); nothing from this fork is
