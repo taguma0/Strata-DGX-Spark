@@ -339,3 +339,13 @@ void tq_gu_rows(TqIsa, int, const uint8_t*, size_t, size_t, int, const void* con
 }
 
 }  // namespace strata::kernels::cpu
+
+// ggml_fp16_to_fp32: the iq4nl_neon.cpp / iq3xxs_neon.cpp rows decode their f16 scale blocks through
+// ggml's helper, and the release engine no longer links ggml-base (0.2.16), so the one ggml symbol the
+// NEON rows still need lives here.  Exact IEEE binary16: __fp16 is the native half on Arm64, the
+// conversion preserves NaN payloads and signs, and subnormal halves convert exactly.
+extern "C" float ggml_fp16_to_fp32(uint16_t h) {
+    __fp16 v;
+    std::memcpy(&v, &h, sizeof v);
+    return static_cast<float>(v);
+}
