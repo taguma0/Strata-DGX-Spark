@@ -8961,7 +8961,8 @@ def engine_step(a, gpu, hip, amd, cuda_tk, vision):
         gpu = hip_card(eng, gpu, amd)
         a.gpu = gpu["index"] if gpu["count"] > 1 else a.gpu
     else:
-        eng = None if a.build or hip or ARM64 else get_prebuilt(   # no ready-made Arm64 engine
+        eng = None if a.build or hip or ARM64 else get_prebuilt(   # Arm: always built from this checkout - the
+        # ready-made aarch64 engine of the signed feed carries no fork SDOT kernels
             a.prebuilt, gpu, vision, **({"toolkit": 12} if cuda_tk == 12
                                                 else {}))
     if eng is not None and not hip and json.loads((eng / "BUILD.json").read_text(encoding="utf-8")).get("source") != "local":

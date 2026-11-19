@@ -5,7 +5,7 @@ Upstream is [Niko1221/Strata](https://github.com/Niko1221/Strata), kept as the `
 substantive deltas; this page is the file-by-file version of the same claim, so a reviewer can check them
 against the code instead of trusting the prose.
 
-149 files changed, 38054 insertions(+), 707 deletions(-) as measured on 2026-11-19 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size; an earlier header measured against `upstream/main` directly, which quietly counted upstream's own post-base commits as fork delta - the regeneration commands now use the merge-base so that cannot recur). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **62 files (11 added, 42 modified, 9 deleted)** - files whose fork version
+149 files changed, 38058 insertions(+), 707 deletions(-) as measured on 2026-11-19 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size; an earlier header measured against `upstream/main` directly, which quietly counted upstream's own post-base commits as fork delta - the regeneration commands now use the merge-base so that cannot recur). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **62 files (11 added, 42 modified, 9 deleted)** - files whose fork version
 differs from current upstream; a file byte-identical to `upstream/main` is not counted even when the
 merge-base diff lists it, because that entry is upstream's own post-base edit riding in through the fork.
 
@@ -101,8 +101,11 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
 ## Setup and tests (20 files)
 
 - `terminal/setup.py`: ARM64 detection as a test-overridable global (golden-style tests set `setup.ARM64 = False`
-  to describe an x86 PC on any host), NEON as the Arm baseline in place of the AVX checks, the machine model
-  suffixed "(Arm64, NEON)". The GB10 VRAM count itself is upstream's (`gpus()` handles the `[N/A]` as unified
+  to describe an x86 PC on any host - upstream reads `machine()` live and its tests carry no Arm handling, so
+  without the global these fork-run tests break on Spark hardware), NEON as the Arm baseline in place of the AVX
+  checks, the machine model suffixed "(Arm64, NEON)", and `eng = None if ... or ARM64`: on Arm the engine is
+  always built from this checkout, because the ready-made aarch64 engine of the signed update feed (upstream's
+  own Spark path since 0.2.7.1) carries none of the fork's SDOT kernels. The GB10 VRAM count itself is upstream's (`gpus()` handles the `[N/A]` as unified
   memory, Strix-Halo style); an earlier fork rule counting a quarter of the RAM became dead code and was
   removed once upstream's own handling landed in the sync.
 - `terminal/strata_control/drafting.py`: Swift (UkisAI's fine-tune of the same weights - same hidden size,
