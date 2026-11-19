@@ -10908,7 +10908,7 @@ def main() -> int:
     # offered only when someone answers (--yes asks nothing), default no; the benchmark starts its own server and stops it
     if not a.yes and sys.stdin.isatty() and ask(
             "Run a quick benchmark now? It measures this install for about 10 minutes and writes a report you can share "
-            f"(later: {'BENCH.bat' if WIN else './bench.sh'})", ["y", "n"], "n", a.yes) == "y":
+            "(later: ./bench.sh)", ["y", "n"], "n", a.yes) == "y":
         subprocess.call([sys.executable, str(ROOT / "tools" / "strata_bench.py"), "--config", str(cfg_path), "--port", str(port)])
     return start(cfg_path, port)
 

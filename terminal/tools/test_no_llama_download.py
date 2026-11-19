@@ -18,7 +18,7 @@ SCRIPTS = ["tools/packaging/build_cuda_linux.sh", "tools/packaging/build_cuda_li
            "tools/packaging/build_sycl_linux.sh", "tools/packaging/build_split_cuda.sh", "tools/packaging/build_split_hip.sh",
            "tools/packaging/build_vision_windows.bat", "tools/packaging/build_vision_mac.sh",
            "tools/packaging/mac/build_engine.sh", "engine/spark/build_engine.sh",
-           "terminal/tools/hip/build_windows.bat", "tools/docker/Dockerfile.src", "tools/docker/Dockerfile", "tools/docker/entrypoint.sh", ".github/workflows/backends.yml",
+           "terminal/tools/hip/build_windows.bat", "tools/docker/Dockerfile.src", "tools/docker/Dockerfile", "tools/docker/entrypoint.sh",
            ".github/workflows/metal-build.yml", "engine/metal/setup_mac.py", "engine/sycl/setup_intel.py"]
 # a download of llama.cpp: its git remote or archive URL, setup's fetch function, the downloaded folder as a requirement
 FETCH = [r"ggml-org/llama\.cpp(\.git|/archive)", r"get_llama_cpp\s*\(", r"LLAMA_CPP_ZIP", r"FETCHCONTENT_SOURCE_DIR_STRATA_LLAMACPP"]

@@ -194,10 +194,6 @@ def start_need_mib(model: str, ctx: int, kv: str = "int8", reserve_mib: int = 30
     return gap + base + main + extra + HEAD_MIB + max(int(reserve_mib or 0), 0) + prompt + needed_mib(model, slots, vendor, drafter)
 
 
-def ctx_label(ctx: int) -> str:
-    return f"{ctx // 1024}K" if ctx % 1024 == 0 else f"{ctx} tokens"
-
-
 @dataclass
 class Fit:
     ctx: int                            # always the context asked for: a fit never changes it

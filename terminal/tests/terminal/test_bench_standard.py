@@ -303,7 +303,7 @@ class DocsAndPackagingTests(unittest.TestCase):
         self.assertIn("bench/prompts/standard-v1", package_terminal.PAYLOAD)
 
     def test_the_launchers_point_at_the_standard_benchmark(self):
-        for name in ("BENCH.bat", "bench.sh"):
+        for name in ("bench.sh",):  # fork: BENCH.bat removed, GB10 is Linux
             self.assertIn("strata.py bench run", (self.ROOT.parent / "tools" / name).read_text(encoding="utf-8"))
 
 
