@@ -40,7 +40,7 @@ Full suite tables: adjacent folders `-5` and `-6`.
   match to the third digit, decode medians sit inside the baseline's run-to-run spread (n=9, 54-86 tok/s).
 - Two rounds, no signal above noise. 402 new instructions buy nothing measurable at any measured point.
 - **Not adopted**: the production engine stays the gcc 13.3 build. The rebuild is kept for reference at
-  `/home/taguma/Strata-gb10-build` (engine 0.1.52, same args, `--pool-affinity auto`).
+  `~/Strata-gb10-build` (engine 0.1.52, same args, `--pool-affinity auto`).
 - Timing note for this box: the server's start-up warm-up aborts the engine (exit -6, "the Q8_K quantizer is an
   x86-64 (AVX) kernel...") on some starts, in both builds alike (13 of 101 starts in the production log; none in
   the timed rounds, whose starts warm differently). The server restarts the engine and serving continues; warm-up

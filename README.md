@@ -95,7 +95,7 @@ One request per row, 128-token answers, greedy decoding:
 **This fork (IQ3_XXS + image reading):** the same steps as [Install from a source checkout](docs/DGX_SPARK_LINUX.md#install-from-a-source-checkout), with the clone URL and two flags swapped. The feed's engine does not carry this fork's changes, so setup compiles this fork's engine and the image encoder on your machine the first time.
 
 ```
-git clone https://github.com/shi3z/Strata-DGX-Spark.git
+git clone https://github.com/taguma0/Strata-DGX-Spark.git
 cd Strata-DGX-Spark
 ./setup.sh --yes --family qwen --model IQ3_XXS --vision gpu --no-start
 ```
