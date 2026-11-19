@@ -8168,8 +8168,7 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
                                      "written by setup.py")
     ap.add_argument("--host", default=None,
                     help="the address to listen on: 127.0.0.1 = this PC only (the default), 0.0.0.0 = also other devices "
-                         "on your network (set an API key), \"::\" = IPv6 on every address (IPv4 too), \"::1\" = IPv6 "
-                         "loopback only; also \"host\" in the config")
+                         "on your network, :: = all IPv6 interfaces (set an API key); also \"host\" in the config")
     ap.add_argument("--script-cycle", action="store_true",
                     help="with --script given more than once: repeat the scripts by position instead of advancing "
                          "to the last one and staying there, so extra requests a harness makes (a session title, "
