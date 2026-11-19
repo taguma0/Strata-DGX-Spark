@@ -30,7 +30,9 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
 - **Added** `engine/src/kernels/cpu/iq3xxs_neon.cpp`, `iq4nl_neon.cpp` (+`*_parity.cpp` twins): the two tuned
   SDOT kernels for the IQ3_XXS and IQ4_NL gate/up rows. Bit-identical to the ggml dots they replace,
   1.26x (1 token) to 3.11x (4+) in isolation; end-to-end speed is unchanged because the expert windows are
-  DRAM/GPU-bound ([A/B record](../bench/results/2026-10-29-iq3xxs-neon-ab/RESULTS.md)).
+  DRAM/GPU-bound ([A/B record](../bench/results/2026-10-29-iq3xxs-neon-ab/RESULTS.md)). They were weighed
+  against dropping them on 2026-11-19 and **kept** by the owner: the parity twins make them a free substitution
+  (bit-identical by construction), and they are the only Arm i-quant tuning this build carries.
 - **Added** `engine/src/kernels/cpu/portable_stubs.cpp`: `ggml_fp16_to_fp32` and friends, needed because the
   0.2.16 release engine no longer links `ggml-base`.
 - **Modified** `engine/CMakeLists.txt`, `cmake/backends/cpu.cmake`: build the NEON sources on Arm64 and leave
