@@ -131,22 +131,6 @@ STRATA_RUN_CONFIG_RO=1 ./setup.sh --start
 The settings card disappears from the page and every save is refused (403). Chat, the API and the model
 itself are untouched, and the file itself is as it was.
 
-### Open the chat page from other devices (Tailscale)
-
-Listen on the DGX Spark's tailnet address only (not on `0.0.0.0`), and allow the names other devices use for it:
-
-```
-TS_IP=$(tailscale ip -4)
-TS_NAME=$(tailscale status --json | python3 -c "import json,sys; print(json.load(sys.stdin)['Self']['DNSName'].rstrip('.'))")
-STRATA_ALLOWED_HOSTS="$TS_NAME,$TS_IP" terminal/.venv/bin/python terminal/serve/server.py --engine strata \
-  --config terminal/strata-<model>.json --host "$TS_IP" --port 8081
-```
-
-Then open `http://<TS_NAME>:8081/` from any device on your tailnet. Only devices on your tailnet can reach it, but
-**anyone on the tailnet can use the model**: to require a key, add `"api_key": "<a long secret>"` to
-`terminal/strata-<model>.json` (the chat page then asks for it). Never listen beyond `127.0.0.1` or your tailnet address
-without a key.
-
 ### What is different from the x86-64 build
 
 - Strata's own AVX-512 / AVX-2 CPU kernels are x86-only and are **not built** on Arm64. The i-quant experts
