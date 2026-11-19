@@ -5,7 +5,7 @@ Upstream is [Niko1221/Strata](https://github.com/Niko1221/Strata), kept as the `
 substantive deltas; this page is the file-by-file version of the same claim, so a reviewer can check them
 against the code instead of trusting the prose.
 
-149 files changed, 38058 insertions(+), 707 deletions(-) as measured on 2026-11-19 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size; an earlier header measured against `upstream/main` directly, which quietly counted upstream's own post-base commits as fork delta - the regeneration commands now use the merge-base so that cannot recur). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **62 files (11 added, 42 modified, 9 deleted)** - files whose fork version
+150 files changed, 38066 insertions(+), 712 deletions(-) as measured on 2026-11-20 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size; an earlier header measured against `upstream/main` directly, which quietly counted upstream's own post-base commits as fork delta - the regeneration commands now use the merge-base so that cannot recur). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **63 files (11 added, 43 modified, 9 deleted)** - files whose fork version
 differs from current upstream; a file byte-identical to `upstream/main` is not counted even when the
 merge-base diff lists it, because that entry is upstream's own post-base edit riding in through the fork.
 
@@ -31,7 +31,7 @@ that is byte-identical to `upstream/main` (`git diff --quiet upstream/main main 
 is upstream's post-base edit being carried, not fork delta - the symmetric failure the merge-base rule does
 not catch.
 
-## Engine (14 files)
+## Engine (15 files)
 
 The Arm64 / GB10 kernel layer - the heart of the fork.
 
@@ -50,6 +50,14 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   `engine/include/strata/kernels/cpu/expert.hpp`, `engine/include/strata/kernels/cpu/iq_avx2.hpp`,
   `engine/src/core/native_dense.cpp`, `engine/src/core/verify.cpp`: the i-quant rows' GB10 path - the NEON
   include propagation, the f16 scale decode, and the dense-layer GB10 fixes.
+- **Modified** `engine/include/strata/platform/cpu_relax.hpp`: the aarch64 doorbell fences
+  (`strata_store_fence` / `strata_load_fence`) became the full system barrier `dmb sy` (2026-11-20,
+  27 sites in the shipped binary) instead of the tuned pair `dmb oshst` / `dmb ishld`. The survey of
+  `calvinvette/strata-inference-orin` found `dmb sy` at every doorbell - the Jetson builder hit the weak-ordering
+  window on real hardware and upstream carries neither fence family. `oshst`/`ishld` is the right tuned pair for
+  a C2C-coherent GPU, but `sy` also orders against system-scope observers (non-coherent PCIe endpoints). Both
+  fences sit outside the spin loops - once per doorbell transition, tens of cycles - so no speed moved and the
+  served stream stayed bit-identical across the swap (the load's `slot 0 verified` parity check).
 - **Modified** `engine/src/program/generate.cpp` - **E2, model loading**: the mapped-read readahead
   (`advise_pairs`, `STRATA_FILL_AHEAD`, default 256) used to gate off for `--expert-cache-per-layer`, which is
   what the Spark config deploys, so the cold profile fill faulted 24,576 blobs serially at 587 MB/s (73.1 s;
