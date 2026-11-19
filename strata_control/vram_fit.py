@@ -175,6 +175,25 @@ def fits(model: str, vram_gb: float, ctx: int, kv: str = "int8", reserve_mib: in
     return slack_mib(model, vram_gb, ctx, kv, reserve_mib, prefill, vendor, slots, kv_resident, drafter) >= needed_mib(model, slots, vendor, drafter)
 
 
+def start_need_mib(model: str, ctx: int, kv: str = "int8", reserve_mib: int = 300, prefill="auto",
+                   vendor: str = "intel", slots: int = 0, kv_resident: int = 0, drafter: str = "mtp") -> float:
+    """The MiB of free VRAM this start itself wants: the exact other side of slack_mib() - the free memory that
+    leaves the expert cache its needed_mib() of slack, so a card is roomy exactly when its free VRAM reaches
+    this. Solved card-free on purpose: `vram_need: "auto"` in the serve config asks a card that is not free
+    yet to wait until it is."""
+    gap = GAP_MIB.get(str(vendor or "").lower(), GAP_OTHER_MIB)
+    prompt = PROMPT_BASE_MIB + PROMPT_PER_TOKEN_MIB * chunk_of(prefill)
+    base = base_mib(model)
+    main = session_mib(int(ctx), kv, 0)
+    extra = 0.0
+    if measured(model, slots, vendor, drafter):
+        base = slotted_base_mib(model, vendor, drafter)
+        main = session_mib(int(ctx), kv, kv_resident)
+        if slots >= 2:
+            extra = min(int(slots), SLOTS_MAX) * main
+    return gap + base + main + extra + HEAD_MIB + max(int(reserve_mib or 0), 0) + prompt + needed_mib(model, slots, vendor, drafter)
+
+
 def ctx_label(ctx: int) -> str:
     return f"{ctx // 1024}K" if ctx % 1024 == 0 else f"{ctx} tokens"
 

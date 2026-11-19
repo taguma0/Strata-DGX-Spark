@@ -108,6 +108,78 @@ class _Nvml:
         return out
 
 
+# --------------------------------------------------------------------------------------- CUDA driver (GB10: no NVML frame buffer)
+class _CudaMem:
+    """The CUDA driver's view of the memory the card can still give out, through ctypes - the driver API itself,
+    no bindings and no new dependency. For GB10-class machines where NVML reports no frame buffer at all (DGX
+    Spark: nvidia-smi prints [N/A] for memory, nvmlDeviceGetMemoryInfo fails): the card's memory is unified, so
+    cuMemGetInfo's figures are the honest "free for a model to load" line the serve config's VRAM gate waits on.
+    The driver API wants an active context: retain the card's primary context, make it current, read, set none,
+    release - about 0.1 s a read with no footprint left behind (verified on GB10), so the figure is cached a
+    moment and failed reads retry no faster than that."""
+
+    def __init__(self, index=0, lib=None):
+        self.index, self.dev, self.lib = index, ctypes.c_int(0), lib
+        self.cache_s = 2.0
+        self._cache = (0.0, None)                      # (time.monotonic(), the dict read last, None: too soon/failed)
+        if self.lib is None:
+            try:
+                self.lib = ctypes.CDLL("nvcuda.dll" if os.name == "nt" else "libcuda.so.1")
+            except OSError:
+                self.lib = None
+
+    def read(self):
+        now = time.monotonic()
+        at, val = self._cache
+        if val is not None and now - at < self.cache_s:
+            return dict(val)
+        if val is None and at and now - at < self.cache_s:
+            return {}                                  # a failing driver: try again in a moment, not every read
+        out = {}
+        try:
+            if self.lib is not None and self.lib.cuInit(0) == 0 and self.lib.cuDeviceGet(ctypes.byref(self.dev), self.index) == 0:
+                ctx = ctypes.c_void_p(0)
+                retain = getattr(self.lib, "cuDevicePrimaryCtxRetain", None)
+                release = getattr(self.lib, "cuDevicePrimaryCtxRelease_v2", None) or getattr(self.lib, "cuDevicePrimaryCtxRelease", None)
+                if retain is not None and release is not None and retain(ctypes.byref(ctx), self.dev) == 0:
+                    try:
+                        self.lib.cuCtxSetCurrent(ctx)
+                        free, total = ctypes.c_size_t(0), ctypes.c_size_t(0)
+                        get = getattr(self.lib, "cuMemGetInfo_v2", None) or self.lib.cuMemGetInfo
+                        if get(ctypes.byref(free), ctypes.byref(total)) == 0 and total.value:
+                            out["mem_used"], out["mem_total"] = int(total.value - free.value), int(total.value)
+                    finally:
+                        self.lib.cuCtxSetCurrent(ctypes.c_void_p(0))
+                        release(self.dev)
+        except (AttributeError, OSError):              # noqa: BLE001 - no driver or an old one without these calls: nothing is shown
+            out = {}
+        self._cache = (now, out or None)
+        return dict(out)
+
+
+class _Nvidia:
+    """NVML's readings; on cards like GB10 where NVML has no frame buffer, the CUDA driver's view of what can
+    still be given out is merged in (see _CudaMem) - telemetry and the serve VRAM gate read one reader."""
+
+    def __init__(self, index=0, cuda=None):
+        self.index, self.nvml = index, _Nvml(index)
+        self.cuda = cuda
+
+    def ok(self):
+        return self.nvml.ok()
+
+    def name(self):
+        return self.nvml.name()
+
+    def read(self):
+        out = self.nvml.read()
+        if out.get("mem_total") is None and out.get("mem_used") is None:
+            if self.cuda is None:
+                self.cuda = _CudaMem(self.index)
+            out.update({k: v for k, v in self.cuda.read().items() if out.get(k) is None})
+        return out
+
+
 # ------------------------------------------------------------------------------------------------ AMD (Linux sysfs)
 SYSFS = "/sys"
 
@@ -351,7 +423,7 @@ def gpu_reader(index=0, amd=False):
     tests' AMD trees are read on a Mac too."""
     if amd:
         return _Amd(index)
-    return _Metal(index) if sys.platform == "darwin" else _Nvml(index)
+    return _Metal(index) if sys.platform == "darwin" else _Nvidia(index)
 
 
 _DISPLAY_CLASS = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}"

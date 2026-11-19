@@ -504,9 +504,10 @@ class EngineStuck(RuntimeError):
 
 
 class GpuBusy(RuntimeError):
-    """The model is unloaded and the GPU has less free VRAM than min_free_vram_mib: something else (a game, another
-    model server) is using it, so the engine is not started into the little that is left.  `retry_after`: seconds
-    for the Retry-After header of the 503."""
+    """The model is unloaded and the GPU has less free VRAM than the load gate asks for (min_free_vram_mib, or
+    vram_need with load_wait_s giving the wait): something else (a game, another model server) is using it, so
+    the engine is not started into the little that is left.  `retry_after`: seconds for the Retry-After header
+    of the 503."""
 
     def __init__(self, message="", retry_after=None):
         super().__init__(message)
@@ -3820,6 +3821,36 @@ def drafting_card_class() -> str:
     return _CARD_CLASS[0]
 
 
+def vram_fit_start_need(cfg: dict, args: list, backend) -> int | None:
+    """The model's own VRAM floor in MiB for the config's `vram_need`: "auto" - the same vram_fit estimate
+    fit_start() sizes a start from, asked the other way: the free VRAM that still leaves this start (its
+    context, KV window, drafter, reserve) the expert cache's working minimum. A card with less free than that
+    must give some back before the engine starts into it. None when the estimate makes no claim (no GPU
+    backend, a layer split, or nothing this start is priced from); the gate then honors only set numbers."""
+    if cfg.get("layer_split") or "--layer-split" in (args or []) or backend in (None, "", "metal"):
+        return None
+
+    def flag(name):
+        return args[args.index(name) + 1] if name in args and args.index(name) + 1 < len(args) else None
+
+    res_s = flag("--kv-resident")
+    kv_resident = int(res_s) if res_s and str(res_s).isdigit() else 0
+    ctx_s = flag("--max-context")
+    ctx = int(ctx_s) if ctx_s and str(ctx_s).isdigit() else 131072
+    reserve_s = flag("--vram-reserve-mib")
+    reserve = int(reserve_s) if reserve_s and str(reserve_s).isdigit() else 700      # the engine's default reserve
+    n = cfg.get("parallel")
+    n = n if isinstance(n, int) and not isinstance(n, bool) and n >= 2 else 0
+    if not n and ("--batch" in args or "--slots" in args):
+        b = flag("--batch") or flag("--slots") or "0"
+        n = int(b) if str(b).isdigit() and int(b) >= 2 else 0
+    model = str(cfg.get("model_name") or flag("--native") or "")
+    vendor = {"sycl": "intel", "cuda": "cuda", "hip": "hip"}.get(str(backend), "other")
+    need = vram_fit.start_need_mib(model, ctx, flag("--kv") or "int8", reserve, flag("--prefill") or "auto", vendor,
+                                    slots=n, kv_resident=kv_resident, drafter=vram_fit.drafter_of(args))
+    return int(need) if need else None
+
+
 def drafting_vram_mib(cfg: dict, backend: str | None, archs) -> float | None:
     """MiB of graphics memory of the ONE card DFlash2 would run on, for the drafter's confidence (drafting.expected_slots); None for several cards, a
     chip that shares the computer's memory (Strix Halo, the Spark: their experts are all "resident") or a card the driver does not answer for."""
@@ -4946,6 +4977,9 @@ class Service:
         # server's model); the next request after an unload starts the engine again
         self.idle_unload_s = 0
         self.min_free_vram_mib = 0
+        self.vram_need = 0                             # "auto" or a MiB number: the load gate's own line (off: min_free_vram_mib decides alone)
+        self.vram_need_auto_mib = 0                    # the model's floor the wiring priced once, for "auto"
+        self.load_wait_s = 0.0                         # how long a load waits for that much VRAM to come back (0: vram_free_wait_s alone)
         self.before_load = None
         self.before_load_timeout_s = 120.0               # #1997: how long the before_load command may run
         self.before_load_ignore_failure = False          # #1997: load even when it fails, without a VRAM check
@@ -5343,6 +5377,20 @@ class Service:
         except Exception:
             return None
 
+    def vram_need_mib(self) -> tuple:
+        """The load gate's line: (MiB of VRAM that must be free, the config key that set it); (0, "") when no
+        gate is asked for. min_free_vram_mib alone unless vram_need raises it: "auto" to the model's own floor
+        (the wiring priced it once into vram_need_auto_mib, vram_fit's estimate for this start), or a plain
+        number - and the higher line wins, so a hand-set floor is neither undercut nor overridden."""
+        need, label = int(self.min_free_vram_mib or 0), "min_free_vram_mib"
+        auto = int(getattr(self, "vram_need_auto_mib", 0) or 0)
+        if auto > need:
+            need, label = auto, "vram_need auto"
+        v = str(self.vram_need or "").strip()
+        if v.isdigit() and int(v) > need:
+            need, label = int(v), "vram_need"
+        return need, label
+
     FATAL_GPU_MAX = 3            # fatal GPU errors of one engine within FATAL_GPU_WINDOW_S: after that it is not started again
     FATAL_GPU_WINDOW_S = 600.0
 
@@ -5408,22 +5456,31 @@ class Service:
                           flush=True)
                 else:
                     print(f"[strata] the before_load command failed ({why}); checking the free VRAM", flush=True)
-        if self.min_free_vram_mib and not (hook_failed and self.before_load_ignore_failure):
+        need, need_label = self.vram_need_mib()
+        if need and not (hook_failed and self.before_load_ignore_failure):
             free = self.free_vram_mib()
-            if free is not None and free < self.min_free_vram_mib and self._release_orphan_encoder():
+            if free is not None and free < need and self._release_orphan_encoder():
                 free = self.free_vram_mib()                      # the encoder's share is back: the card is judged without our own process (#4352)
-            deadline = time.time() + self.vram_free_wait_s   # memory another process just gave back can take a moment
-            while free is not None and free < self.min_free_vram_mib and time.time() < deadline:
+            wait_s = self.load_wait_s if self.load_wait_s > 0 else self.vram_free_wait_s
+            deadline = time.time() + wait_s   # memory another process just gave back can take a moment; load_wait_s waits on purpose, longer
+            waiting = False
+            while free is not None and free < need and time.time() < deadline:
+                if not waiting:
+                    waiting = True
+                    print(f"[strata] the model needs {need} MiB of VRAM free ({need_label}) and only {free} are "
+                          f"free: waiting for the GPU to give some back, up to {wait_s:g} s ...", flush=True)
                 time.sleep(0.5)
                 free = self.free_vram_mib()
-            if free is not None and free < self.min_free_vram_mib:
+            if free is not None and free < need:
                 if hook_failed and not self.before_load_ignore_failure:
                     print(f"[strata] the before_load command failed ({hook_failed}) and only {free} MiB of VRAM is "
-                          f"free (the model needs {self.min_free_vram_mib}): not loading; 503", flush=True)
+                          f"free (the model needs {need}): not loading; 503", flush=True)
                 raise GpuBusy(f"the GPU is in use by another program: {free} MiB of VRAM free, the model needs "
-                              f"{self.min_free_vram_mib} (min_free_vram_mib) - it stays unloaded until that is free"
+                              f"{need} ({need_label}) - it stays unloaded until that is free"
                               + (f"; the before_load command failed ({hook_failed})" if hook_failed else ""),
                               retry_after=15)
+            if waiting:
+                print(f"[strata] the GPU gave its memory back: {free} MiB of VRAM free, loading", flush=True)
             if hook_failed and not self.before_load_ignore_failure:
                 print(f"[strata] the before_load command failed ({hook_failed}), but {free} MiB of VRAM is free: "
                       "loading", flush=True)
@@ -10435,6 +10492,22 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
               f"{svc.before_load_timeout_s:g} s", flush=True)
     svc.before_load_ignore_failure = cfg.get("before_load_ignore_failure") is True
     svc.before_load_strict = cfg.get("before_load_strict") is True
+    svc.vram_need = cfg.get("vram_need")               # "auto" or a MiB number: the load gate's own line (off: min_free_vram_mib decides alone)
+    try:
+        svc.load_wait_s = float(cfg.get("load_wait_s") or 0)   # how long a load waits for the GPU, past the memory-settle wait
+    except (TypeError, ValueError):
+        print("[strata] \"load_wait_s\" in the config is not a number; using "
+              f"{svc.load_wait_s:g} s", flush=True)
+    if str(svc.vram_need or "").strip().lower() == "auto":
+        # the backend the start actually gets: the config's, else the hardware the drafting probe sees
+        svc.vram_need_auto_mib = vram_fit_start_need(cfg, engine.spawn[1] if hasattr(engine, "spawn") else [],
+                                                     cfg.get("backend") or drafting.detect_hardware()[0]) or 0
+        if svc.vram_need_auto_mib:
+            print(f"[strata] vram_need auto: this model wants {svc.vram_need_auto_mib} MiB of VRAM free before a "
+                  "load (vram_fit's estimate for this start)", flush=True)
+        else:
+            print("[strata] vram_need \"auto\": the estimate makes no claim for this start; only a configured "
+                  "min_free_vram_mib gates loads", flush=True)
     # --slot-save-path is relative to the working directory the server was started in; the config's slot_save_path
     # to the config's "cwd" (the engine's folder) when it has one.  Either way the engine gets an absolute path.
     if a.slot_save_path or cfg.get("slot_save_path"):
