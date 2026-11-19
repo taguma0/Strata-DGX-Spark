@@ -146,6 +146,8 @@ itself are untouched, and the file itself is as it was.
 
 Original project, releases and documentation: **[github.com/Niko1221/Strata](https://github.com/Niko1221/Strata)**.
 
+The same four deltas file by file, with the regeneration commands: [docs/DGX_SPARK_FORK.md](docs/DGX_SPARK_FORK.md).
+
 ---
 
 <h3 align="center">Run powerful AI on your own computer.</h3>
