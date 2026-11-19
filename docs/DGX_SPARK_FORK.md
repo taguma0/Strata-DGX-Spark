@@ -72,15 +72,25 @@ upstream on this point (the gate work below keeps `server.py` in the delta for i
   46.84 GiB GPU expert cache must be refilled; see the E2 entry above), so the fork invests entirely on the
   load side: gate, price and wait, not new eviction.
 
-## Setup and tests (15 files)
+## Setup and tests (16 files)
 
 - `terminal/setup.py`: ARM64 detection as a test-overridable global (golden-style tests set `setup.ARM64 = False`
   to describe an x86 PC on any host), NEON as the Arm baseline in place of the AVX checks, the machine model
   suffixed "(Arm64, NEON)". The GB10 VRAM count itself is upstream's (`gpus()` handles the `[N/A]` as unified
   memory, Strix-Halo style); an earlier fork rule counting a quarter of the RAM became dead code and was
   removed once upstream's own handling landed in the sync.
-- `terminal/tools/test_setup_*.py` (12) + `terminal/tests/terminal/test_drafting*.py`: the same tests adapted
-  to the 0.2.16 `terminal/` layout, Arm hosts and the fork's config names.
+- `terminal/strata_control/drafting.py`: Swift (UkisAI's fine-tune of the same weights - same hidden size,
+  vocabulary and experts layout) joins `EXPERIMENTAL_FAMILIES`: a start that NAMES `dflash2` runs the DFlash2
+  drafter, Auto keeps the MTP. Upstream refuses Swift there (no acceptance numbers, MTP only); the fork's
+  acceptance record is [docs/SWIFT-DF2-GB10-2026-11-04.md](SWIFT-DF2-GB10-2026-11-04.md) (gx10, 2026-11-04).
+- `terminal/tools/test_setup_*.py` (12): the adaptation is one pin - `setup.ARM64 = False`, "these tests
+  describe an x86-64 PC whatever machine runs them" (the CUDA repo URL picks sbsa on Arm, `cpu_floor`'s gate
+  and the feed-engine path read the global). Two files carry more: the golden test normalizes the host-derived
+  `vision.threads` out of the recorded Unsloth UD-Q4_K_XL golden configs on non-WIN hosts, and `test_setup_sycl`
+  drops upstream's xe/i915 expert-profile ranking test.
+- `terminal/tests/terminal/test_drafting*.py` (2): not adaptations - behavior tests of `EXPERIMENTAL_FAMILIES`
+  above: naming `dflash2` on a swift model runs the drafter with no note, the auto path keeps the MTP, and
+  `supported_model(experimental=True)` accepts the swift names.
 
 ## App (3 files)
 
