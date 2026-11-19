@@ -147,7 +147,7 @@ Then open `http://<TS_NAME>:8081/` from any device on your tailnet. Only devices
 `terminal/strata-<model>.json` (the chat page then asks for it). Never listen beyond `127.0.0.1` or your tailnet address
 without a key.
 
-### What is different from the x86-64 build, and what is not done
+### What is different from the x86-64 build
 
 - Strata's own AVX-512 / AVX-2 CPU kernels are x86-only and are **not built** on Arm64. The i-quant experts
   run on ggml-cpu's NEON code, plus two tuned Arm SDOT kernels for the IQ4_NL and IQ3_XXS gate/up rows. Both are
@@ -158,7 +158,7 @@ without a key.
   i-quant size.
 - A GB10 reports no VRAM size (CPU and GPU share one memory). Setup counts **a quarter of the RAM, at most 32 GB,** as
   VRAM so the same bytes are not counted twice.
-- The Arm64 / GB10 port first landed in `git show 324b0ef`; every upstream release since is merged on top of it.
+- The Arm64 / GB10 port first landed in [`324b0ef`](https://github.com/taguma0/Strata-DGX-Spark/commit/324b0ef) (`git show 324b0ef`); every upstream release since is merged on top of it.
 
 Original project, releases and documentation: **[github.com/Niko1221/Strata](https://github.com/Niko1221/Strata)**.
 
