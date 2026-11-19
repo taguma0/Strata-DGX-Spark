@@ -282,7 +282,8 @@ class GpuReaderFallback(unittest.TestCase):
 
     def test_nvml_wins_and_amd_is_unchanged(self):
         with mock.patch.object(telemetry._Nvml, "ok", return_value=True), mock.patch.object(telemetry, "_Intel") as intel:
-            self.assertIsInstance(telemetry.gpu_reader(0), telemetry._Nvml)
+            # fork: gpu_reader hands out _Nvidia (the NVML reader with GB10's CUDA free-memory merged in)
+            self.assertIsInstance(telemetry.gpu_reader(0), telemetry._Nvidia)
             intel.assert_not_called()
         with mock.patch.object(telemetry, "_Intel") as intel:
             self.assertIsInstance(telemetry.gpu_reader(0, amd=True), telemetry._Amd)
@@ -291,7 +292,7 @@ class GpuReaderFallback(unittest.TestCase):
     def test_no_nvml_and_no_arc_keeps_the_not_ok_nvml_reader(self):
         with mock.patch.object(telemetry._Nvml, "ok", return_value=False), \
                 mock.patch.object(telemetry, "_Intel", return_value=mock.Mock(ok=mock.Mock(return_value=False))):
-            self.assertIsInstance(telemetry.gpu_reader(0), telemetry._Nvml)
+            self.assertIsInstance(telemetry.gpu_reader(0), telemetry._Nvidia)  # fork: the NVML reader stands behind _Nvidia
 
 
 if __name__ == "__main__":

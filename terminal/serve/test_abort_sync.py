@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # fork: same guard as the sibling serve tests; upstream's runner imports `serve` a different way and red here (upstream main fails too)
 from serve import server
 
 FAKE = r'''import queue, sys, threading, time
