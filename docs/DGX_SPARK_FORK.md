@@ -5,7 +5,9 @@ Upstream is [Niko1221/Strata](https://github.com/Niko1221/Strata), kept as the `
 substantive deltas; this page is the file-by-file version of the same claim, so a reviewer can check them
 against the code instead of trusting the prose.
 
-149 files changed, 38158 insertions(+), 696 deletions(-) as measured on 2026-11-19 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size; an earlier header measured against `upstream/main` directly, which quietly counted upstream's own post-base commits as fork delta - the regeneration commands now use the merge-base so that cannot recur). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **63 files (11 added, 43 modified, 9 deleted)**.
+149 files changed, 38054 insertions(+), 707 deletions(-) as measured on 2026-11-19 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size; an earlier header measured against `upstream/main` directly, which quietly counted upstream's own post-base commits as fork delta - the regeneration commands now use the merge-base so that cannot recur). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **62 files (11 added, 42 modified, 9 deleted)** - files whose fork version
+differs from current upstream; a file byte-identical to `upstream/main` is not counted even when the
+merge-base diff lists it, because that entry is upstream's own post-base edit riding in through the fork.
 
 The sync direction never reverses: every upstream release is merged on top of the port (first landed in
 [`324b0ef`](https://github.com/taguma0/Strata-DGX-Spark/commit/324b0ef)); nothing from this fork is
@@ -24,7 +26,10 @@ git diff --name-status "$MB" main -- ':(exclude)bench/*' ':(exclude)docs/bench-r
 The area lists below were written from the second command and the bench index from the third - re-derive
 both, do not hand-extend them, after a big upstream merge.  Diff against the merge-base, never against
 `upstream/main` itself: upstream commits the fork has not merged yet are not fork deltas, and the two-dot
-form silently counts them (that is how the 2026-11-19 ledger drifted).
+form silently counts them (that is how the 2026-11-19 ledger drifted).  Then drop from the list every file
+that is byte-identical to `upstream/main` (`git diff --quiet upstream/main main -- <path>`): its merge-base M
+is upstream's post-base edit being carried, not fork delta - the symmetric failure the merge-base rule does
+not catch.
 
 ## Engine (14 files)
 
@@ -127,15 +132,16 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
 `app/host/server/native-settings.mjs`, `app/host/src/lib/drafting.ts` and `app/host/tests/drafting.test.mjs`:
 the draft-layer sentences the fork's serve prints, mirrored in the app.
 
-## Docs (7 files)
+## Docs (6 files)
 
 `docs/DGX_SPARK_LINUX.md` (the upstream-official Spark path, retested here), `docs/DETAILS.md` and
-`docs/VRAM_ELASTIC.md` (the load-gate additions), `docs/lang/README.ja.md` (the Japanese copy of the fork's
-README intro), **added** `docs/SWIFT-DF2-GB10-2026-11-04.md` (the DF2 drafter record on GB10), and this page
-with its bench index (`docs/DGX_SPARK_FORK.md`, `docs/DGX_SPARK_BENCH_RECORDS.md`).  The other six
-`docs/lang/` translations the fork once rewrote no longer differ from upstream at the current base and left
-the ledger; upstream has since rewritten those files again (dark-mode logo, two supporters reworks) and also
-touches `SUPPORTERS.md` and `tools/docker/build.sh` - those four upstream commits are simply pending on the
+`docs/VRAM_ELASTIC.md` (the load-gate additions), **added** `docs/SWIFT-DF2-GB10-2026-11-04.md` (the DF2
+drafter record on GB10), and this page with its bench index (`docs/DGX_SPARK_FORK.md`,
+`docs/DGX_SPARK_BENCH_RECORDS.md`).  All seven `docs/lang/` README translations the fork once rewrote now
+match upstream byte-for-byte - the last one, `docs/lang/README.ja.md`, was swapped to the upstream copy on
+2026-11-20, retiring the fork's Japanese intro: the Spark story stays in the English README and this page,
+and the Japanese page follows upstream for free.  Upstream's own post-base edits (dark-mode logo, two
+supporters reworks, plus `SUPPORTERS.md` and `tools/docker/build.sh`) are four commits simply pending on the
 fork's side, not deltas.
 
 ## Removed from upstream (9 files)
