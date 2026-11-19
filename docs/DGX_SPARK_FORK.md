@@ -73,8 +73,9 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
 
 - `terminal/setup.py`: ARM64 detection as a test-overridable global (golden-style tests set `setup.ARM64 = False`
   to describe an x86 PC on any host), NEON as the Arm baseline in place of the AVX checks, the machine model
-  suffixed "(Arm64, NEON)", and `unified_vram_gb()` - the GB10 rule of a quarter of RAM, at most 32 GB, counted
-  as VRAM so shared bytes are not counted twice.
+  suffixed "(Arm64, NEON)". The GB10 VRAM count itself is upstream's (`gpus()` handles the `[N/A]` as unified
+  memory, Strix-Halo style); an earlier fork rule counting a quarter of the RAM became dead code and was
+  removed once upstream's own handling landed in the sync.
 - `terminal/tools/test_setup_*.py` (12) + `terminal/tests/terminal/test_drafting*.py`: the same tests adapted
   to the 0.2.16 `terminal/` layout, Arm hosts and the fork's config names.
 

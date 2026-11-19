@@ -140,8 +140,6 @@ itself are untouched, and the file itself is as it was.
   ([A/B record](bench/results/2026-10-29-iq3xxs-neon-ab/RESULTS.md)).
 - The canonical **Q2_0 pack's CPU kernel is x86-only**: on Arm64 it stops at start with a clear message. Use an
   i-quant size.
-- A GB10 reports no VRAM size (CPU and GPU share one memory). Setup counts **a quarter of the RAM, at most 32 GB,** as
-  VRAM so the same bytes are not counted twice.
 - The Arm64 / GB10 port first landed in [`324b0ef`](https://github.com/taguma0/Strata-DGX-Spark/commit/324b0ef) (`git show 324b0ef`); every upstream release since is merged on top of it.
 
 Original project, releases and documentation: **[github.com/Niko1221/Strata](https://github.com/Niko1221/Strata)**.

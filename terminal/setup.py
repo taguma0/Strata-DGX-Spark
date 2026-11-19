@@ -1723,7 +1723,6 @@ def gpus():
     for line in s.strip().splitlines():
         try:
             idx, name, mem, cc, drv = [x.strip() for x in line.split(",")]
-            unified = False
             try:
                 mem_gb = float(mem) / 1024.0   # nvidia-smi nounits: MiB
             except ValueError:
@@ -1737,7 +1736,7 @@ def gpus():
                               "driver": drv, "uma": True, "dedicated_gb": 0.0, "shared_gb": shared})
                 continue
             found.append({"index": int(idx), "name": name, "vram_gb": mem_gb, "arch": cc.replace(".", ""),
-                          "driver": drv, **({"unified": True} if unified else {})})
+                          "driver": drv})
         except ValueError:
             continue
     return found
@@ -1801,13 +1800,6 @@ def pcie_lines(link: dict) -> tuple[str, str | None]:
                      "narrow it when idle); if it stays narrow under load: is it in the right slot (the one wired "
                      "x16), fully seated, and not sharing lanes with an M.2 drive? (the BIOS can say)")
     return line, warn_line
-
-
-def unified_vram_gb() -> float:
-    """A GPU that reports no memory size of its own (NVIDIA GB10 / DGX Spark: CPU and GPU share one pool): the part of
-    that pool counted as VRAM.  A quarter of the RAM, at most 32 GB - the experts live in RAM as well, and the same
-    bytes must not be counted twice."""
-    return min(ram_gb() / 4, 32.0)
 
 
 GPU_PICK = None                                         # --gpu N (issue #51); None: the card with the most VRAM
