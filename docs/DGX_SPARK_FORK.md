@@ -5,7 +5,7 @@ Upstream is [Niko1221/Strata](https://github.com/Niko1221/Strata), kept as the `
 substantive deltas; this page is the file-by-file version of the same claim, so a reviewer can check them
 against the code instead of trusting the prose.
 
-155 files changed, 38228 insertions(+), 865 deletions(-) as measured on 2026-11-19 (the page measures itself, so a docs edit shifts the insertion count by its own size). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **69 files (11 added, 49 modified, 9 deleted)**.
+149 files changed, 38135 insertions(+), 696 deletions(-) as measured on 2026-11-19 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size; an earlier header measured against `upstream/main` directly, which quietly counted upstream's own post-base commits as fork delta - the regeneration commands now use the merge-base so that cannot recur). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **63 files (11 added, 43 modified, 9 deleted)**.
 
 The sync direction never reverses: every upstream release is merged on top of the port (first landed in
 [`324b0ef`](https://github.com/taguma0/Strata-DGX-Spark/commit/324b0ef)); nothing from this fork is
@@ -16,12 +16,15 @@ cherry-picks, so `upstream/main..main` is mostly upstream's own authors.
 
 ```
 git fetch upstream
-git diff --shortstat upstream/main main
-git diff --name-status upstream/main main -- ':(exclude)bench/*' ':(exclude)docs/bench-results/*'
+MB=$(git merge-base upstream/main main)
+git diff --shortstat "$MB" main
+git diff --name-status "$MB" main -- ':(exclude)bench/*' ':(exclude)docs/bench-results/*'
 ```
 
 The area lists below were written from the second command and the bench index from the third - re-derive
-both, do not hand-extend them, after a big upstream merge.
+both, do not hand-extend them, after a big upstream merge.  Diff against the merge-base, never against
+`upstream/main` itself: upstream commits the fork has not merged yet are not fork deltas, and the two-dot
+form silently counts them (that is how the 2026-11-19 ledger drifted).
 
 ## Engine (14 files)
 
@@ -79,7 +82,7 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   `::1` answering and `::` dual-stack are pins on upstream's mechanism (the fork had its own IPv6 stack until
   it converged to upstream's on 2026-11-19, `5a6736bfc`).
 
-## Setup and tests (18 files)
+## Setup and tests (20 files)
 
 - `terminal/setup.py`: ARM64 detection as a test-overridable global (golden-style tests set `setup.ARM64 = False`
   to describe an x86 PC on any host), NEON as the Arm baseline in place of the AVX checks, the machine model
@@ -102,18 +105,27 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
 - `terminal/tools/test_no_llama_download.py`, `terminal/tests/terminal/test_bench_standard.py`: fallout fixes
   for the Removed-from-upstream pass below - both read a deleted file directly (the `backends.yml` workflow,
   the `BENCH.bat` launcher) and failed with `FileNotFoundError` until the dead entries came out.
+- `terminal/serve/test_telemetry_intel.py`, `terminal/serve/test_abort_sync.py`: the minimal-server CI fixes.
+  The first asserted the bare `_Nvml` where the fork's `gpu_reader` hands out the GB10 wrapper `_Nvidia`
+  (composition, not a subclass); the second imported `serve` in the one way the workflow's
+  `unittest discover` cannot resolve - upstream's own main fails that same import, and the fork now carries
+  the one-line `sys.path` guard its sibling serve tests already had.
 
 ## App (3 files)
 
 `app/host/server/native-settings.mjs`, `app/host/src/lib/drafting.ts` and `app/host/tests/drafting.test.mjs`:
 the draft-layer sentences the fork's serve prints, mirrored in the app.
 
-## Docs (13 files)
+## Docs (7 files)
 
 `docs/DGX_SPARK_LINUX.md` (the upstream-official Spark path, retested here), `docs/DETAILS.md` and
-`docs/VRAM_ELASTIC.md` (the load-gate additions), **added** `docs/SWIFT-DF2-GB10-2026-11-04.md` (the DF2
-drafter record on GB10), the 7 `docs/lang/` README translations for the fork's intro rewrite, and this page
-with its bench index (`docs/DGX_SPARK_FORK.md`, `docs/DGX_SPARK_BENCH_RECORDS.md`).
+`docs/VRAM_ELASTIC.md` (the load-gate additions), `docs/lang/README.ja.md` (the Japanese copy of the fork's
+README intro), **added** `docs/SWIFT-DF2-GB10-2026-11-04.md` (the DF2 drafter record on GB10), and this page
+with its bench index (`docs/DGX_SPARK_FORK.md`, `docs/DGX_SPARK_BENCH_RECORDS.md`).  The other six
+`docs/lang/` translations the fork once rewrote no longer differ from upstream at the current base and left
+the ledger; upstream has since rewritten those files again (dark-mode logo, two supporters reworks) and also
+touches `SUPPORTERS.md` and `tools/docker/build.sh` - those four upstream commits are simply pending on the
+fork's side, not deltas.
 
 ## Removed from upstream (9 files)
 
@@ -124,11 +136,11 @@ missed: two tests read the deleted files and broke (fixed as noted under Setup a
 benchmark prompt offered the removed `BENCH.bat` (it names `./bench.sh` only now), and `vram_fit.py` carried
 a `ctx_label` helper nothing had ever called (removed with the rest).
 
-## Root and tools (6 files)
+## Root and tools (4 files)
 
-`build.sh` (**added**, the fork's GB10 build entry), `.gitignore`, `README.md` (the DGX Spark section),
-`SUPPORTERS.md`; `tools/requant_dense_gguf.py` (**added**, requantizing the dense layers) and
-`tools/docker/build.sh`.
+`build.sh` (**added**, the fork's GB10 build entry), `.gitignore` (run-config and build backups, the
+`engine-feed/` download cache), `README.md` (the fork's intro rewrite and the DGX Spark section); and
+`tools/requant_dense_gguf.py` (**added**, requantizing the dense layers).
 
 The bench records this fork adds (40 folders of A/B and community evidence) are indexed separately:
 [docs/DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md).
