@@ -7,15 +7,11 @@
 
 <p align="center"><b>English</b> · <a href="docs/lang/README.zh-CN.md">简体中文</a> · <a href="docs/lang/README.ja.md">日本語</a> · <a href="docs/lang/README.de.md">Deutsch</a> · <a href="docs/lang/README.fr.md">Français</a> · <a href="docs/lang/README.es.md">Español</a> · <a href="docs/lang/README.pt-BR.md">Português</a></p>
 
-> **This is a fork of [Niko1221/Strata](https://github.com/Niko1221/Strata) that also runs on the NVIDIA DGX Spark
-> (GB10, Arm64).** The original runs on x86-64 PCs only. Everything below the DGX Spark section is the original
-> README and still describes the x86-64 PCs. All credit for the engine goes to the original project.
+> **This is a fork of [Niko1221/Strata](https://github.com/Niko1221/Strata).** Upstream has supported the NVIDIA DGX Spark (GB10, Arm64) since 0.2.7.1 ([DGX Spark setup](docs/DGX_SPARK_LINUX.md)); this fork tracks every upstream release and adds what the official Spark path leaves open (below). Everything below the DGX Spark section is the original README and still mostly describes x86-64 PCs. All credit for the engine goes to the original project.
 
 ## Strata on the NVIDIA DGX Spark (GB10, Arm64)
 
-This fork adds an Arm64 port so Strata runs on GB10 machines: tested on an ASUS GX10, which has the same chip as the DGX Spark.
-It chats, writes code and **reads pictures**, the same as on a PC. Tested here: **Qwen3.8-Flash-Next IQ3_XXS with
-images on, a 262,144-token context**. Other sizes should work but were **not tested**.
+Upstream runs on the Spark too: the official path is the Terminal with a ready-made linux-aarch64 engine ([DGX Spark setup](docs/DGX_SPARK_LINUX.md), IQ3_S or NVFP4). This fork is the delta on top: the IQ3_XXS build tested **with image reading enabled** (upstream leaves the picture reader untested on the Spark and keeps `--vision no`), two tuned Arm SDOT kernels, IPv6 listening and the GB10 fixes carried through every upstream release. Tested here: an ASUS GX10, the same chip as the DGX Spark, **Qwen3.8-Flash-Next IQ3_XXS with images on, a 262,144-token context**. Other sizes should work but were **not tested**.
 
 ### How fast is it?
 
@@ -94,10 +90,9 @@ One request per row, 128-token answers, greedy decoding:
 
 ### Install
 
-You need a DGX Spark with a CUDA Toolkit 13 (`/usr/local/cuda`; 13.0 through 13.3 measured), `g++` and `git`, and about **85 GB of free disk**
-for IQ3_XXS (model, image encoder and draft layer). There is no ready-made Arm64 engine, so setup **compiles the engine
-and the image encoder on your machine** the first time (a while: it builds many CUDA kernels). It then downloads the
-model from Hugging Face. If it stops, run the same command again: it continues.
+Plain Strata on a Spark is official upstream now: the Terminal installs the ready-made linux-aarch64 engine and the guide points at IQ3_S or NVFP4 ([DGX Spark setup](docs/DGX_SPARK_LINUX.md)). Install this fork for the delta above - it compiles **this fork's engine** and the image encoder on your machine the first time (a while: it builds many CUDA kernels) and then downloads the model from Hugging Face.
+
+You need a DGX Spark with a CUDA Toolkit 13 (`/usr/local/cuda`; 13.0 through 13.3 measured), `g++` and `git`, and about **85 GB of free disk** for IQ3_XXS (model, image encoder and draft layer). If it stops, run the same command again: it continues.
 
 ```
 git clone https://github.com/shi3z/Strata-DGX-Spark.git
@@ -107,22 +102,15 @@ cd Strata-DGX-Spark
 
 ### Start it
 
-The same command you installed with, without `--no-start`: on a finished install it just starts the model.
+The same `./setup.sh` command, without `--no-start`: on a finished install it just starts the model.
 
-```
-./setup.sh --yes
-```
-
-It fills the GPU expert cache with about 47 GB of experts (the expert files stay memory-mapped, not loaded into RAM): **the machine can be slow for 1-3 minutes** and the first start is the
-longest. When the terminal prints `ready: http://127.0.0.1:8080/v1`, open **http://127.0.0.1:8080** in a browser for
-the chat page (pictures can be added there), or check it:
+It fills the GPU expert cache with about 47 GB of experts (the expert files stay memory-mapped, not loaded into RAM): **the machine can be slow for 1-3 minutes** and the first start is the longest. When the terminal prints `ready: http://127.0.0.1:8080/v1`, open **http://127.0.0.1:8080** in a browser for the chat page (pictures can be added there), or check it:
 
 ```
 curl http://127.0.0.1:8080/health
 ```
 
-The API is OpenAI- and Anthropic-compatible: `http://127.0.0.1:8080/v1` (more in [DETAILS.md](docs/DETAILS.md#using-it)).
-If port 8080 is taken by another program, start it by hand on another port:
+The API is OpenAI- and Anthropic-compatible: `http://127.0.0.1:8080/v1` (more in [DETAILS.md](docs/DETAILS.md#using-it)). If port 8080 is taken by another program, start it by hand on another port:
 
 ```
 terminal/.venv/bin/python terminal/serve/server.py --engine strata --config terminal/strata-<model>.json --port 8081
