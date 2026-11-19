@@ -359,7 +359,9 @@ By default the model stays loaded until you close Strata. Three server options, 
 | Option | Config key | What it does |
 | --- | --- | --- |
 | `--idle-unload 600` | `"idle_unload_s": 600` | Unload the model after 600 s without requests. The next request loads it again. |
-| `--min-free-vram-mib 11000` | `"min_free_vram_mib": 11000` | Load an unloaded model only when that much VRAM is free (it waits up to 15 s for memory being given back). Otherwise answer **503** "the GPU is in use by another program". With several GPUs it checks the first one. |
+| `--min-free-vram-mib 11000` | `"min_free_vram_mib": 11000` | Load an unloaded model only when that much VRAM is free (it waits up to 15 s for memory being given back, or up to `load_wait_s`). Otherwise answer **503** "the GPU is in use by another program". With several GPUs it checks the first one. |
+| | `"vram_need": "auto"` or `"vram_need": 9000` | The line the load waits for, from the model instead of a hand-picked number: `"auto"` prices what this start (its context, KV window, drafter and reserve from the engine args) leaves the expert cache's working minimum, the same vram_fit estimate that sizes a start onto a card; a plain number sets the line in MiB. The higher of this and `min_free_vram_mib` wins; when the estimate makes no claim (no GPU backend, a layer split), only the configured numbers gate. At start the server prints `vram_need auto: this model wants NNNN MiB of VRAM free before a load`. |
+| | `"load_wait_s": 600` | How long a load waits for that much VRAM to come back (default: the 15 s given to memory another process has just given back). While it waits, the server log says what the model needs and what is free; the request that asked waits on the reply. When the time runs out it answers **503** with `Retry-After`, as before. |
 | `--before-load "cmd"` | `"before_load": "cmd"` or `["cmd", "arg"]` | A command run before the model is loaded again, for example one that unloads another server's model. |
 | | `"before_load_timeout_s": 120` | How long that command may run. When it fails or times out, the free VRAM decides: with `min_free_vram_mib` set and not enough free, the request gets **503** with `Retry-After`; otherwise the model loads with a warning. `"before_load_strict": true` always refuses on a failure; `"before_load_ignore_failure": true` always loads. |
 
@@ -376,7 +378,7 @@ model files stay in the OS file cache, so loading again takes seconds while that
 
 **Lazy start.** `serve/server.py --engine strata --config strata-<model>.json --lazy` (or `"lazy_load": true`) starts the HTTP
 API without the engine or the vision encoder. The first generation request or `POST /load` loads them, including
-`before_load` and `min_free_vram_mib`. `POST /v1/load` and `/v1/unload` are JSON control aliases (they need the API key,
+`before_load` and the free-VRAM gate (`min_free_vram_mib`, `vram_need` with `load_wait_s`). `POST /v1/load` and `/v1/unload` are JSON control aliases (they need the API key,
 `application/json` and no foreign browser Origin, and return **409** while a request is active or queued). `/api/health`
 aliases `/health`, and `/v1/status` exposes `loaded` and `auto_load`.
 

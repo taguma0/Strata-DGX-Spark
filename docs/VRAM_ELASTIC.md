@@ -99,8 +99,9 @@ expert outside the cache), but I have not run a fault-injection test of these tw
   (idle unload, `POST /load`, or a restart after a crash). The engine sizes its cache at that start from what is free
   *then*, and the reserve is applied only after it is up. If it fails, the server window says
   `the VRAM reserve (N MiB) was not applied: ...` and the engine runs with the cache it got.
-- If another program holds the VRAM at load time, `min_free_vram_mib` (config) decides: the load waits up to 15 s for
-  that much to be free, then answers 503 `the GPU is in use by another program` and the model stays unloaded.
+- If another program holds the VRAM at load time, `min_free_vram_mib` and `vram_need` (config) decide: the load waits
+  for that much to be free, 15 s by default or up to `load_wait_s`, then answers 503
+  `the GPU is in use by another program` and the model stays unloaded.
 - A server restart forgets the reserve: the engine starts with its full cache.
 - Calling it on an unloaded model changes nothing on the GPU; it only sets the reserve for the next load.
 - `GET /v1/status` has a `vram` object with the last figures the engine reported (empty until the first successful

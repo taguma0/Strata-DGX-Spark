@@ -81,6 +81,11 @@ file's pages, which the GPU cache uses.
 The NVFP4 table does not fit in RAM beside the page cache the 68 GB expert file needs. Locking it measured 137 tok/s on a 4K prompt and 26 tok/s
 decode, against 1,252 and 39 without. Leave it on the SSD (setup does).
 
+nvidia-smi and NVML report no memory figures on this chip (their frame buffer queries answer `[N/A]`), so the server reads what the card can
+still give out through the CUDA driver itself (`cuMemGetInfo`, ctypes, no extra dependency): that is the free memory the load gate
+(`min_free_vram_mib`, `vram_need` and `load_wait_s`, [DETAILS.md](DETAILS.md)) waits on here, the API monitor's card figures, and the startup
+line `vram_need auto: this model wants NNNN MiB of VRAM free before a load`.
+
 ## Speeds
 
 Measured on the release-candidate engine package of 0.2.7.1 with `tools/dgx_bench.py`: fresh 4K, 16K and 32K prompts at temperature 0, 256-token
