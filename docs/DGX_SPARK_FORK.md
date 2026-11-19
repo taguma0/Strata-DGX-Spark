@@ -5,7 +5,7 @@ Upstream is [Niko1221/Strata](https://github.com/Niko1221/Strata), kept as the `
 substantive deltas; this page is the file-by-file version of the same claim, so a reviewer can check them
 against the code instead of trusting the prose.
 
-153 files changed, 38221 insertions(+), 860 deletions(-) as measured on 2026-11-19 (the page measures itself, so a docs edit shifts the insertion count by its own size). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **67 files (11 added, 47 modified, 9 deleted)**.
+153 files changed, 38221 insertions(+), 860 deletions(-) as measured on 2026-11-19 (the page measures itself, so a docs edit shifts the insertion count by its own size). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **69 files (11 added, 49 modified, 9 deleted)**.
 
 The sync direction never reverses: every upstream release is merged on top of the port (first landed in
 [`324b0ef`](https://github.com/taguma0/Strata-DGX-Spark/commit/324b0ef)); nothing from this fork is
@@ -79,7 +79,7 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   `::1` answering and `::` dual-stack are pins on upstream's mechanism (the fork had its own IPv6 stack until
   it converged to upstream's on 2026-11-19, `5a6736bfc`).
 
-## Setup and tests (16 files)
+## Setup and tests (18 files)
 
 - `terminal/setup.py`: ARM64 detection as a test-overridable global (golden-style tests set `setup.ARM64 = False`
   to describe an x86 PC on any host), NEON as the Arm baseline in place of the AVX checks, the machine model
@@ -99,6 +99,9 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
 - `terminal/tests/terminal/test_drafting*.py` (2): not adaptations - behavior tests of `EXPERIMENTAL_FAMILIES`
   above: naming `dflash2` on a swift model runs the drafter with no note, the auto path keeps the MTP, and
   `supported_model(experimental=True)` accepts the swift names.
+- `terminal/tools/test_no_llama_download.py`, `terminal/tests/terminal/test_bench_standard.py`: fallout fixes
+  for the Removed-from-upstream pass below - both read a deleted file directly (the `backends.yml` workflow,
+  the `BENCH.bat` launcher) and failed with `FileNotFoundError` until the dead entries came out.
 
 ## App (3 files)
 
@@ -116,7 +119,10 @@ with its bench index (`docs/DGX_SPARK_FORK.md`, `docs/DGX_SPARK_BENCH_RECORDS.md
 
 GitHub plumbing that does not run (or does not make sense) on a fork: the 4 `ISSUE_TEMPLATE` files,
 `pull_request_template.md`, and the `backends.yml`, `docs.yml`, `snapshot.yml` workflows; plus
-`tools/BENCH.bat`. Upstream remains the place to report issues.
+`tools/BENCH.bat`. Upstream remains the place to report issues. The deletions had fallout the first pass
+missed: two tests read the deleted files and broke (fixed as noted under Setup and tests), `setup.py`'s
+benchmark prompt offered the removed `BENCH.bat` (it names `./bench.sh` only now), and `vram_fit.py` carried
+a `ctx_label` helper nothing had ever called (removed with the rest).
 
 ## Root and tools (6 files)
 
