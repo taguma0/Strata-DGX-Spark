@@ -82,6 +82,17 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   `::1` answering and `::` dual-stack are pins on upstream's mechanism (the fork had its own IPv6 stack until
   it converged to upstream's on 2026-11-19, `5a6736bfc`).
 
+## Config JSON: the keys the fork adds (2)
+
+- `vram_need` and `load_wait_s` are the **only** keys the fork adds to the serve config JSON (mechanics in the
+  VRAM load gate section above).  Everything else the server reads from that file - `min_free_vram_mib`,
+  `idle_unload_s`, `lazy_load`, `fit_max_tokens`, the `before_load` hooks - is upstream's.  The set was derived
+  by diffing the `cfg.get(...)` key sets of the two servers, not by reading docs, so a key the fork merely
+  wires differently does not sneak in.  Adjacent, but not config keys: `STRATA_RUN_CONFIG_RO` is an environment
+  variable (the read-only run config section above), and the fork adds **no** key to the run-config schema
+  (`terminal/serve/runconfig.py`) - the `lazy_load` there is upstream's, the fork only routes its lazy wake
+  through the VRAM gate.
+
 ## Setup and tests (20 files)
 
 - `terminal/setup.py`: ARM64 detection as a test-overridable global (golden-style tests set `setup.ARM64 = False`
