@@ -64,7 +64,7 @@ class AutoAndTheBackends(unittest.TestCase):
         self.assertEqual(drafting.choice_of("dflash2", family="qwen", backend="sycl"), "dflash2")
         self.assertEqual(drafting.choice_of("dflash2", family="qwen", backend="cpu"), "mtp", "named, but the engine has none")
         self.assertEqual(drafting.choice_of("dflash2", family="coder", backend="cuda"), "dflash2", "#5240: the Coder runs DFlash2 when it is chosen by name")
-        self.assertEqual(drafting.choice_of("dflash2", family="swift", backend="cuda"), "mtp")
+        self.assertEqual(drafting.choice_of("dflash2", family="swift", backend="cuda"), "dflash2", "the fork: Swift joins EXPERIMENTAL_FAMILIES, a named DFlash2 runs")
 
     def test_the_two_drafters_have_their_own_memory_figure(self):
         self.assertEqual((drafting.DRAFTER_GB["dflash2"], drafting.DRAFTER_GB["mtp"], drafting.DRAFTER_GB["off"]), (0.89, 1.08, 0.0))

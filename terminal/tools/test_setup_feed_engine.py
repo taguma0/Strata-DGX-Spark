@@ -41,6 +41,9 @@ class FeedEngine(unittest.TestCase):
         patch = mock.patch.object(setup.acquisition, "require", lambda what: None)
         patch.start()
         self.addCleanup(patch.stop)
+        patch = mock.patch.object(setup, "ARM64", False)     # the fork: these tests describe an x86 PC on this Arm host
+        patch.start()
+        self.addCleanup(patch.stop)
 
     def run_update(self, code=0):
         return mock.patch.object(setup.subprocess, "run", return_value=types.SimpleNamespace(returncode=code, stdout="", stderr="no feed"))
