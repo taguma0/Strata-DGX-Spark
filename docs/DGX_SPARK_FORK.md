@@ -102,8 +102,8 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
 
 ## App (3 files)
 
-`app/host/server/native-settings.mjs`, `src/lib/drafting.ts` (+test): the draft-layer sentences the fork's
-serve prints, mirrored in the app.
+`app/host/server/native-settings.mjs`, `app/host/src/lib/drafting.ts` and `app/host/tests/drafting.test.mjs`:
+the draft-layer sentences the fork's serve prints, mirrored in the app.
 
 ## Docs (13 files)
 
