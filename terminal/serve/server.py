@@ -3383,6 +3383,65 @@ def vram_fit_start_need(cfg: dict, args: list, backend) -> int | None:
     return int(need) if need else None
 
 
+def parse_evict_peers(value) -> list:
+    """The config's "evict_peers": a list of "http://host:port" strings or objects {"url": ..., "api_key": ...,
+    "priority": int, "protect": true}.  Entries naming no URL are counted and skipped - a half-edited JSON is
+    not a reason for serve not to start."""
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        print("[strata] \"evict_peers\" is neither a list nor a URL; ignoring it", flush=True)
+        return []
+    out, bad = [], 0
+    for p in value:
+        if isinstance(p, str):
+            p = {"url": p}
+        if not isinstance(p, dict) or not str(p.get("url") or "").strip():
+            bad += 1
+            continue
+        q = {"url": str(p["url"]).strip().rstrip("/")}
+        if p.get("api_key"):
+            q["api_key"] = str(p["api_key"])
+        if isinstance(p.get("priority"), int) and not isinstance(p["priority"], bool):
+            q["priority"] = p["priority"]
+        if p.get("protect") is True:
+            q["protect"] = True
+        out.append(q)
+    if bad:
+        print(f"[strata] {bad} \"evict_peers\" entry/entries name no URL; ignoring them", flush=True)
+    return out
+
+
+def discover_serve_servers(proc_dir: str = "/proc", me: int | None = None) -> list:
+    """The loopback URLs of the machine's other strata serve servers, read from the process table: every running
+    serve/server.py that says --port.  Empty where there is no /proc (Windows, macOS) or a server hides from it -
+    the config's "evict_peers" list is the portable way to name peers."""
+    urls, mine = [], str(me if me is not None else os.getpid())
+    try:
+        pids = sorted(os.listdir(proc_dir))
+    except OSError:
+        return urls
+    for pid in pids:
+        if not pid.isdigit() or pid == mine:
+            continue
+        try:
+            raw = Path(proc_dir, pid, "cmdline").read_bytes()
+        except OSError:
+            continue
+        parts = [x.decode("utf-8", "replace") for x in raw.split(b"\0") if x]
+        if not any(p.rsplit("/", 1)[-1] == "server.py" and "serve" in p.split("/") for p in parts):
+            continue
+        port = None
+        for i, p in enumerate(parts):
+            if p == "--port" and i + 1 < len(parts):
+                port = parts[i + 1]
+            elif p.startswith("--port="):
+                port = p[len("--port="):]
+        if port and port.isdigit():
+            urls.append(f"http://127.0.0.1:{port}")
+    return urls
+
+
 def drafting_vram_mib(cfg: dict, backend: str | None, archs) -> float | None:
     """MiB of graphics memory of the ONE card DFlash2 would run on, for the drafter's confidence (drafting.expected_slots); None for several cards, a
     chip that shares the computer's memory (Strix Halo, the Spark: their experts are all "resident") or a card the driver does not answer for."""
@@ -3945,6 +4004,17 @@ class Service:
         self.before_load_ignore_failure = False          # #1997: load even when it fails, without a VRAM check
         self.vram_free_wait_s = 15.0                     # how long a full card is waited on (memory given back)
         self.before_load_strict = False                  # #1997: refuse (503) whenever it fails
+        # pressure eviction (evict_on_pressure, off by default): when the load gate finds too little VRAM free for
+        # this model, ask these other strata servers to unload theirs first and wait for the card to settle; the
+        # peer's own busy rules still protect its running requests, and a peer that took our model away a moment
+        # ago is not asked to give it back inside the grace window (the ping-pong this is for)
+        self.evict_on_pressure = False
+        self.evict_peers = []                            # [{"url", "api_key", "priority", "protect"}]
+        self.evict_discover = False                      # find the machine's other serve servers in the process table too
+        self.evict_order = "idle"                        # "idle": the longest idle first; "priority": the config's order
+        self.evict_grace_s = 60.0
+        self.evict_self_url = ""                         # the URL our asks name us with (asked_by)
+        self.unloaded_by = {}                            # peer URL -> when its ask took our model (the grace's clock)
         self.vram_reserve = None                         # #533: the last POST /v1/vram reserve (None: the start's)
         self.vram_reserve_asked = False                  # a POST /v1/vram was made (vram_reserve None is then asked)
         self.vision_held = False                         # an elastic encoder holds VRAM the expert cache gave it
@@ -4362,6 +4432,120 @@ class Service:
             need, label = int(v), "vram_need"
         return need, label
 
+    EVICT_HTTP_TIMEOUT_S = 5.0     # how long a peer's /v1/status or /v1/unload may take to answer
+    EVICT_SETTLE_MAX_S = 20.0      # how long a peer's given-back VRAM may take to show in free_vram_mib
+
+    def _evict_http(self, peer: dict, path: str, post: dict | None = None):
+        """GET (post None) or POST a JSON body to a peer server; its JSON answer, or None: unreachable, timed out
+        or not JSON - all mean the same to an eviction: this peer's GPU cannot be had through HTTP just now.
+        A 409 busy / 503 stuck peer answers with a JSON body of its own, which is passed back as-is."""
+        body = json.dumps(post).encode() if post is not None else None
+        req = urllib.request.Request(str(peer["url"]) + path, data=body,
+                                     method="POST" if post is not None else "GET",
+                                     headers={"Content-Type": "application/json"})
+        if peer.get("api_key"):
+            req.add_header("Authorization", "Bearer " + str(peer["api_key"]))
+        try:
+            with urllib.request.urlopen(req, timeout=self.EVICT_HTTP_TIMEOUT_S) as r:
+                return json.loads(r.read().decode("utf-8", "replace"))
+        except OSError as e:
+            try:
+                return json.loads(e.read().decode("utf-8", "replace"))
+            except Exception:
+                return None
+        except Exception:
+            return None
+
+    def _evict_ask(self, peer: dict) -> bool:
+        """Ask a peer server to give its GPU back; True when it did ("unloaded" / "not loaded").  busy, stuck,
+        refused, unreachable: its model stays where it is and the next peer is asked."""
+        r = self._evict_http(peer, "/v1/unload", {"asked_by": self.evict_self_url})
+        return isinstance(r, dict) and r.get("status") in ("unloaded", "not loaded")
+
+    def _evict_status(self, peer: dict):
+        """The peer's /v1/status as {"loaded": bool, "idle_s": float}, or None when it does not answer."""
+        s = self._evict_http(peer, "/v1/status")
+        if not isinstance(s, dict):
+            return None
+        a = s.get("activity") or {}
+        at = a.get("last_request_at") or s.get("started")
+        idle = max(0.0, time.time() - at) if isinstance(at, (int, float)) else float("inf")
+        return {"loaded": bool(s.get("loaded")), "idle_s": idle}
+
+    def _evict_settle(self, need: int) -> int | None:
+        """After a peer gave its VRAM back: poll free_vram_mib() until the card stops giving, until there is
+        enough, or until EVICT_SETTLE_MAX_S - the next peer is asked only when this one's memory really missed."""
+        prev, t0 = None, time.time()
+        while True:
+            time.sleep(0.5)
+            free = self.free_vram_mib()
+            if free is None or free >= need or time.time() - t0 > self.EVICT_SETTLE_MAX_S \
+                    or (free == prev and time.time() - t0 > 3.0):
+                return free
+            prev = free
+
+    def evict_targets(self) -> list:
+        """The peers an eviction may ask: the configured ones and (with evict_discover) the machine's other serve
+        servers found in the process table - without this server itself, without protect: ed ones, and without one
+        that took our model away less than evict_grace_s ago: that very request back and forth is the ping-pong
+        the grace is for."""
+        now, mine = time.time(), self.evict_self_url
+        peers = [dict(p) for p in self.evict_peers]
+        if self.evict_discover:
+            seen = {p["url"] for p in peers}
+            peers += [{"url": u} for u in discover_serve_servers() if u not in seen and u != mine]
+        out = []
+        for p in peers:
+            url = str(p.get("url") or "").rstrip("/")
+            if not url or url == mine or p.get("protect") is True:
+                continue
+            if now - float(self.unloaded_by.get(url, 0.0)) < self.evict_grace_s:
+                print(f"[strata] not asking {url} for its GPU: it unloaded our model less than {self.evict_grace_s:g} s "
+                      "ago (evict_grace_s)", flush=True)
+                continue
+            p["url"] = url
+            out.append(p)
+        return out
+
+    def pressure_evict(self, need: int, free: int) -> int:
+        """The pressure eviction: a load is about to be refused for want of `need` MiB free (only `free` are), so the
+        other strata servers are asked to give their GPU back, in idle or priority order - POST /v1/unload, and the
+        ask carries our URL (asked_by) so the peer we evict does not evict us back out of hand.  The card is re-read
+        after each one: the eviction stops before one peer too many.  Returns the free MiB last seen; the gate's
+        own wait loop then runs as before."""
+        cands = []
+        for p in self.evict_targets():
+            if self.evict_order == "idle":
+                st = self._evict_status(p)
+                if st is None:
+                    print(f"[strata] {p['url']} does not answer its /v1/status: nothing can be asked of it", flush=True)
+                    continue
+                if not st["loaded"]:
+                    continue                                   # its model is unloaded: nothing here frees VRAM
+                key = (-st["idle_s"], 0)                       # the longest idle first
+            else:
+                key = (p["priority"] if isinstance(p.get("priority"), int) else 10 ** 9, 0)
+            cands.append((key, p))
+        cands.sort(key=lambda c: c[0])
+        if not cands:
+            print(f"[strata] the model needs {need} MiB of VRAM free and only {free} are: no strata peer to ask "
+                  "for its GPU (list \"evict_peers\" or turn on \"evict_discover\")", flush=True)
+            return free
+        print(f"[strata] the model needs {need} MiB of VRAM free and only {free} are: asking the other strata "
+              f"servers for their GPU back ({len(cands)} to try, {self.evict_order} order)", flush=True)
+        for _, p in cands:
+            print(f"[strata] asking {p['url']} to unload its model ...", flush=True)
+            if not self._evict_ask(p):
+                print(f"[strata] {p['url']} keeps its model (a request is running, or it did not answer); "
+                      "asking the next one", flush=True)
+                continue
+            free = self._evict_settle(need)
+            print(f"[strata] {p['url']} gave its GPU back: {free if free is not None else 'unknown MiB of'} "
+                  "VRAM free now", flush=True)
+            if free is None or free >= need:
+                return free
+        return free
+
     FATAL_GPU_MAX = 3            # fatal GPU errors of one engine within FATAL_GPU_WINDOW_S: after that it is not started again
     FATAL_GPU_WINDOW_S = 600.0
 
@@ -4441,6 +4625,8 @@ class Service:
             free = self.free_vram_mib()
             if free is not None and free < need and self._release_orphan_encoder():
                 free = self.free_vram_mib()                      # the encoder's share is back: the card is judged without our own process (#4352)
+            if free is not None and free < need and self.evict_on_pressure:
+                free = self.pressure_evict(need, free)            # the other strata servers give their GPU back first
             wait_s = self.load_wait_s if self.load_wait_s > 0 else self.vram_free_wait_s
             deadline = time.time() + wait_s   # memory another process just gave back can take a moment; load_wait_s waits on purpose, longer
             waiting = False
@@ -4596,19 +4782,20 @@ class Service:
         finally:
             self.fifo.release()
 
-    def unload_waiting(self, wait_s: float) -> str:
+    def unload_waiting(self, wait_s: float, asked_by: str | None = None) -> str:
         """#1997: unload(), but a running or queued request is waited for (up to wait_s) instead of answering "busy":
         a peer server that needs this GPU can then free the card on the server's terms.  "busy" after wait_s."""
         deadline = time.monotonic() + max(0.0, wait_s)
         while True:
-            r = self.unload()
+            r = self.unload(asked_by=asked_by)
             if r != "busy" or time.monotonic() >= deadline:
                 return r
             time.sleep(0.25)
 
-    def unload(self, idle_for: float | None = None) -> str:
+    def unload(self, idle_for: float | None = None, asked_by: str | None = None) -> str:
         """Stop the engine between requests: "unloaded", "not loaded", "busy" (a request is running or waiting, or
-        with idle_for: one ran more recently than that) or "unsupported"."""
+        with idle_for: one ran more recently than that) or "unsupported".  With asked_by: the URL of the peer that
+        asked - it is remembered so our own pressure eviction does not ask that peer back inside evict_grace_s."""
         if not hasattr(self.engine, "unload"):
             return "unsupported"
         if not self.fifo.acquire(blocking=False):
@@ -4623,6 +4810,8 @@ class Service:
             if idle_for is not None and time.time() - (self.last_request_at or self.started_at) < idle_for:
                 return "busy"
             self.engine.unload()
+            if asked_by:
+                self.unloaded_by[str(asked_by).strip().rstrip("/")[:200]] = time.time()
             if self.vision is not None and hasattr(self.vision, "unload"):
                 self.vision.unload()
             self.vision_held = False
@@ -7104,7 +7293,8 @@ def make_handler(svc: Service):
                     if path == "/v1/unload":
                         wait_s = unload_wait(parse_qs(urlsplit(self.path).query).get("wait", [None])[0],
                                              svc.UNLOAD_WAIT_S)
-                        result = svc.unload_waiting(wait_s) if wait_s else svc.unload()
+                        asked = str(req.get("asked_by") or "").strip()[:200] or None
+                        result = svc.unload_waiting(wait_s, asked) if wait_s else svc.unload(asked_by=asked)
                         if result == "busy":
                             raise ModelBusy("a request is running or queued")
                     else:
@@ -8371,8 +8561,9 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         except ST.UnknownPreTokenizer as e:             # a model with its own splitting rule: stop here, never split with another's
             ap.error(f"the model's tokenizer ({tpath}): {e}")
     hub = hub_from_config(cfg, a.mcp_config)            # before the minutes of loading: a bad entry stops here
-    if a.offline and (hub is not None or cfg.get("before_load") or a.before_load):
-        ap.error("--offline requires MCP servers and before_load commands to be disabled in this profile")
+    if a.offline and (hub is not None or cfg.get("before_load") or a.before_load or cfg.get("evict_on_pressure")):
+        ap.error("--offline requires MCP servers, before_load commands and evict_on_pressure to be disabled in "
+                 "this profile")
     if a.offline:
         # The same decision, reported through the policy module so the two cannot drift: a profile
         # that permits a network source is refused here rather than on its first request.
@@ -8597,6 +8788,29 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
     svc.before_load_ignore_failure = cfg.get("before_load_ignore_failure") is True
     svc.before_load_strict = cfg.get("before_load_strict") is True
     svc.vram_need = cfg.get("vram_need")               # "auto" or a MiB number: the load gate's own line (off: min_free_vram_mib decides alone)
+    svc.evict_on_pressure = cfg.get("evict_on_pressure") is True
+    svc.evict_discover = cfg.get("evict_discover") is True
+    ev_order = str(cfg.get("evict_order") or "idle").strip().lower()
+    if ev_order not in ("idle", "priority"):
+        print("[strata] \"evict_order\" in the config is neither \"idle\" nor \"priority\"; using \"idle\"", flush=True)
+        ev_order = "idle"
+    svc.evict_order = ev_order
+    try:
+        svc.evict_grace_s = max(0.0, float(cfg.get("evict_grace_s") or svc.evict_grace_s))
+    except (TypeError, ValueError):
+        print(f"[strata] \"evict_grace_s\" in the config is not a number; using {svc.evict_grace_s:g} s", flush=True)
+    if svc.evict_on_pressure:
+        svc.evict_peers = parse_evict_peers(cfg.get("evict_peers"))
+        svc.evict_self_url = f"http://127.0.0.1:{a.port}"
+        if not svc.vram_need_mib()[0]:
+            svc.vram_need = "auto"     # an eviction compares the card to a line: the model's own estimate when none is set
+        who = ", ".join(p["url"] for p in svc.evict_peers) or "none named"
+        print(f"[strata] a load short on VRAM asks these servers to unload first ({who}"
+              + (", plus the ones evict_discover finds)" if svc.evict_discover else ")")
+              + f": {svc.evict_order} order, grace {svc.evict_grace_s:g} s", flush=True)
+        if not svc.evict_peers and not svc.evict_discover:
+            print("[strata] evict_on_pressure is on but no peers are configured: nothing will ever be asked "
+                  "(list \"evict_peers\" or set \"evict_discover\")", flush=True)
     try:
         svc.load_wait_s = float(cfg.get("load_wait_s") or 0)   # how long a load waits for the GPU, past the memory-settle wait
     except (TypeError, ValueError):

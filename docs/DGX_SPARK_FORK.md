@@ -66,10 +66,11 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   ([E2 record](../bench/results/2026-11-05-e2-profile-fill-advise/README.md),
   [startup phases](../bench/results/2026-11-05-serve-startup-time/README.md): warm restart 8.3 s).
 
-## Serve: the VRAM load gate (5 files)
+## Serve: the VRAM load gate (6 files)
 
 - `terminal/serve/server.py` (the `vram_fit_start_need` wiring), `terminal/serve/server_parts/engines.py`,
-  `terminal/strata_control/vram_fit.py` (+**added** `terminal/serve/test_vram_load_gate.py`, **modified**
+  `terminal/strata_control/vram_fit.py` (+**added** `terminal/serve/test_vram_load_gate.py`,
+  `terminal/serve/test_evict_peers.py`, **modified**
   `terminal/serve/telemetry.py`): the model **load** gate. `vram_need`
   raises the gate line above `min_free_vram_mib` - as a number, or `"auto"`, which prices the model's own VRAM
   floor once per start (`vram_fit.start_need_mib()`: context, KV window, drafter, reserve; the higher line wins
@@ -78,9 +79,21 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   CUDA driver read `terminal/serve/telemetry.py` adds (`cuMemGetInfo` through the primary context, ~0.1 s per
   read, cached) because NVML reports no
   frame buffer at all on unified memory (`nvidia-smi` prints `[N/A]`).
-  The **unload** side is deliberately unchanged from upstream - on this machine an unload is expensive (the
-  46.84 GiB GPU expert cache must be refilled; see the E2 entry above), so the fork invests entirely on the
-  load side: gate, price and wait, not new eviction.
+  The **unload** side stays upstream's - on this machine an unload is expensive (the 46.84 GiB GPU expert
+  cache must be refilled; see the E2 entry above) - with one exception the fork adds on top of the gate,
+  `evict_on_pressure`: when the gate has found too little VRAM free for this model, the machine's other strata
+  servers are asked to give their GPU back, before the wait and before the 503.  The ask is the peer's own
+  `POST /v1/unload`, so that server's busy/queued rules still guard its running requests; the one thing the
+  route learns from a fork server is `asked_by` (the asker's URL, remembered in `unloaded_by`): a server does
+  not ask back the peer that unloaded it inside `evict_grace_s` - a request and its return is the ping-pong
+  the grace is for.  Peers are named in `evict_peers` and/or found in `/proc` (`evict_discover`, Linux);
+  the order is `"idle"` (the peer's own `/v1/status` `activity.last_request_at`) or `"priority"`; the card is
+  re-read after each unload, so the eviction stops before one peer too many.  With no `vram_need` or
+  `min_free_vram_mib` line set, the model's `"auto"` estimate becomes the compared line, which makes the
+  switch work standalone.  Everything is off by default and `--offline` refuses `evict_on_pressure` the way it
+  refuses `before_load`.  When who-may-hold-the-GPU is known, the upstream tools stay the cheaper way
+  (`idle_unload_s`, `before_load`): the eviction is for carrying several models whose next request nobody
+  schedules.
 
 ## Serve: read-only run config (`server.py` + `test_server.py`)
 
@@ -95,10 +108,11 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   `::1` answering and `::` dual-stack are pins on upstream's mechanism (the fork had its own IPv6 stack until
   it converged to upstream's on 2026-11-19, `5a6736bfc`).
 
-## Config JSON: the keys the fork adds (2)
+## Config JSON: the keys the fork adds (7)
 
-- `vram_need` and `load_wait_s` are the **only** keys the fork adds to the serve config JSON (mechanics in the
-  VRAM load gate section above).  Everything else the server reads from that file - `min_free_vram_mib`,
+- `vram_need`, `load_wait_s` and the five pressure-eviction keys (`evict_on_pressure`, `evict_peers`,
+  `evict_discover`, `evict_order`, `evict_grace_s`) are the **only** keys the fork adds to the serve config
+  JSON (mechanics in the VRAM load gate section above).  Everything else the server reads from that file - `min_free_vram_mib`,
   `idle_unload_s`, `lazy_load`, `fit_max_tokens`, the `before_load` hooks - is upstream's.  The set was derived
   by diffing the `cfg.get(...)` key sets of the two servers, not by reading docs, so a key the fork merely
   wires differently does not sneak in.  Adjacent, but not config keys: `STRATA_RUN_CONFIG_RO` is an environment
@@ -143,9 +157,10 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
 `app/host/server/native-settings.mjs`, `app/host/src/lib/drafting.ts` and `app/host/tests/drafting.test.mjs`:
 the draft-layer sentences the fork's serve prints, mirrored in the app.
 
-## Docs (6 files)
+## Docs (7 files)
 
-`docs/DGX_SPARK_LINUX.md` (the upstream-official Spark path, retested here), `docs/DETAILS.md` and
+`docs/DGX_SPARK_LINUX.md` (the upstream-official Spark path, retested here), `docs/DETAILS.md`,
+`docs/TERMINAL.md` (the `--offline` line names `evict_on_pressure`) and
 `docs/VRAM_ELASTIC.md` (the load-gate additions), **added** `docs/SWIFT-DF2-GB10-2026-11-04.md` (the DF2
 drafter record on GB10), and this page with its bench index (`docs/DGX_SPARK_FORK.md`,
 `docs/DGX_SPARK_BENCH_RECORDS.md`).  All seven `docs/lang/` README translations the fork once rewrote now
