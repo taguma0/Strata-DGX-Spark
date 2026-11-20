@@ -85,6 +85,16 @@ void iq256_rows(int, const uint8_t*, size_t, int, const void* const*, int, float
 // iq4nl256_down_rows has a real Arm64 implementation on this CPU: iq4nl_neon.cpp (the SDOT
 // multi-token kernel), gated at run time by cpu_neon_dot_ok() below; no stub here.
 bool kq256_supported(int) noexcept { return false; }
+// BW-4 (0.2.17): native_expert.cpp asks kq512_ok and these row kernels on every build (its kq512_ok lives
+// unguarded; the probe chain starts at cpu_avx512_ok(), false on Arm64, so kq512_ok answers no and the
+// stopping stubs below are never reached - they only answer the link.  (kq512_supported itself rides in
+// native_expert.cpp unguarded as a plain comparison.)
+void kq512_gu_rows(int, const uint8_t*, size_t, size_t, int, const void* const*, int, float* const*, int, int) {
+    x86_only("the AVX-512 K-quant gate/up rows");
+}
+void kq512_rows(int, const uint8_t*, size_t, int, const void* const*, int, float* const*, int, int) {
+    x86_only("the AVX-512 K-quant down rows");
+}
 void kq256_gu_rows(int, const uint8_t*, size_t, size_t, int, const void* const*, int, float* const*, int, int) {
     x86_only("the AVX-2 K-quant kernel");
 }
