@@ -70,30 +70,21 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
 
 - `terminal/serve/server.py` (the `vram_fit_start_need` wiring), `terminal/serve/server_parts/engines.py`,
   `terminal/strata_control/vram_fit.py` (+**added** `terminal/serve/test_vram_load_gate.py`,
-  `terminal/serve/test_evict_peers.py`, **modified**
-  `terminal/serve/telemetry.py`): the model **load** gate. `vram_need`
-  raises the gate line above `min_free_vram_mib` - as a number, or `"auto"`, which prices the model's own VRAM
-  floor once per start (`vram_fit.start_need_mib()`: context, KV window, drafter, reserve; the higher line wins
-  and a hand-set floor is never undercut); `load_wait_s` lets an unloaded model wait for the card to come back
-  instead of failing (503 + `Retry-After` as before). On GB10 the "free VRAM" the gate waits on comes from the
-  CUDA driver read `terminal/serve/telemetry.py` adds (`cuMemGetInfo` through the primary context, ~0.1 s per
-  read, cached) because NVML reports no
-  frame buffer at all on unified memory (`nvidia-smi` prints `[N/A]`).
+  `terminal/serve/test_evict_peers.py`, **modified** `terminal/serve/telemetry.py`): the model **load** gate.
+  `vram_need` raises the gate line above `min_free_vram_mib` - a number, or `"auto"` pricing the model's own
+  VRAM floor once per start (`vram_fit.start_need_mib()`); `load_wait_s` lets an unloaded model wait for the
+  card to come back instead of failing (503 + `Retry-After` as before).  On GB10 the "free VRAM" the gate
+  waits on comes from the CUDA driver read `terminal/serve/telemetry.py` adds (`cuMemGetInfo`, cached),
+  NVML reporting no frame buffer at all on unified memory.
   The **unload** side stays upstream's - on this machine an unload is expensive (the 46.84 GiB GPU expert
-  cache must be refilled; see the E2 entry above) - with one exception the fork adds on top of the gate,
-  `evict_on_pressure`: when the gate has found too little VRAM free for this model, the machine's other strata
-  servers are asked to give their GPU back, before the wait and before the 503.  The ask is the peer's own
-  `POST /v1/unload`, so that server's busy/queued rules still guard its running requests; the one thing the
-  route learns from a fork server is `asked_by` (the asker's URL, remembered in `unloaded_by`): a server does
-  not ask back the peer that unloaded it inside `evict_grace_s` - a request and its return is the ping-pong
-  the grace is for.  Peers are named in `evict_peers` and/or found in `/proc` (`evict_discover`, Linux);
-  the order is `"idle"` (the peer's own `/v1/status` `activity.last_request_at`) or `"priority"`; the card is
-  re-read after each unload, so the eviction stops before one peer too many.  With no `vram_need` or
-  `min_free_vram_mib` line set, the model's `"auto"` estimate becomes the compared line, which makes the
-  switch work standalone.  Everything is off by default and `--offline` refuses `evict_on_pressure` the way it
-  refuses `before_load`.  When who-may-hold-the-GPU is known, the upstream tools stay the cheaper way
-  (`idle_unload_s`, `before_load`): the eviction is for carrying several models whose next request nobody
-  schedules.
+  cache must be refilled; see the E2 entry above) - with one exception, the pressure eviction
+  `evict_on_pressure` (its keys are enumerated in the Config JSON section): a gate short on free VRAM asks
+  the machine's other strata servers for their GPU back.  The ask is the peer's own `POST /v1/unload`, so
+  that peer's busy/queued rules still guard its running requests; the only thing the route learns from a
+  fork server is `asked_by` - a server does not ask back, inside `evict_grace_s`, the peer that unloaded
+  it, that very request and its return being the ping-pong the grace is for.  Off by default, `--offline`
+  refuses it like `before_load`; the eviction is for carrying several models whose next request nobody
+  schedules - when who holds the GPU is known, `idle_unload_s` and `before_load` stay the cheaper way.
 
 ## Serve: read-only run config (`server.py` + `test_server.py`)
 
