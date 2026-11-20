@@ -1303,6 +1303,14 @@ class StrataEngine:
                 v = tune.get(k)
                 if isinstance(v, (int, float)) and not isinstance(v, bool) and 0.0 <= float(v) <= 1.0:
                     keys += f" {k}={float(v)!r}"
+            # this request's window depths: spec_t caps the drafter's depth, spec_s the verify window (a smaller
+            # --mtp-max-t / --spec for one request; the engine only accepts caps below the start-up window).  A
+            # changed DFlash2 cap re-captures its window graphs - do not flip it between turns of one conversation.
+            for k in ("spec_t", "spec_s"):
+                v = tune.get(k)
+                if isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 8:
+                    keys += f" {k}={v}"
+            # prefill-pipe for this request (--prefill-pipe): 0 off, 1 evened out, > 1 the rig's b/a in tokens
             # a layer split's prompt chunks (--prefill-pipe): 0 off, 1 evened out, > 1 the rig's b/a in tokens
             v = tune.get("prefill_pipe")
             if isinstance(v, (int, float)) and not isinstance(v, bool) and 0.0 <= float(v) <= 262144.0:

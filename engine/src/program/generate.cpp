@@ -15751,6 +15751,9 @@ int main(int argc, char** argv) {
         if (use_mtp && S_mtp < S) mtp.set_max_drafts(S_mtp - 1);
         // --pipeline-windows 2 loads the drafter with 8 rows: the serial loop's chain keeps its own length
         else if (use_mtp && mtp.max_t() > S_mtp) mtp.set_max_drafts(S_mtp - 1);
+        // spec_t=/spec_s= requests cap the drafter below this depth for one request and restore it after (mtp.max_t() is the
+        // window's t: the number of drafts + 1).
+        const int mtp_start_t = use_mtp ? mtp.max_t() : 0;
         strata::spec::SuffixDrafter sfx(std::max(1, o.suffix_draft), 64, (size_t) o.max_context + 4096);
         strata::spec::DraftPolicy policy(S);   // MTP or lookup window, learned over the whole process
         strata::spec::DraftPolicy policy_idle(S);   // --draft auto: the other drafter's learned costs; swapped in with it when a request uses the other drafter
@@ -18060,6 +18063,7 @@ int main(int argc, char** argv) {
             bool req_min_p_set = false;
             double req_pipe = -1.0;   // --prefill-pipe for this request (setup's calibration of a layer split)
             int req_aux_cpus = -1;   // aux_cpus=0|1: --aux-cpus for this request (-1 = the start-up value)
+            int req_spec_t = 0, req_spec_s = 0;   // spec_t= / spec_s=: this request's drafter-depth and verify-window caps (0 = none)
             // #2228: img_keys=<hex>,<hex>,... (GENI): each picture's key from the server (its normalized bytes' hash),
             // in prompt order.  With them the conversation cache matches a picture by its key and grid, not by its
             // embedding floats, so a picture encoded again with other bits still matches.  Absent: the embeddings' hash.
@@ -18121,6 +18125,8 @@ int main(int argc, char** argv) {
                     else if (key == "draft") req_draft = tok.substr(eq + 1);
                     else if (key == "pipe") req_pipe = std::max(0.0, (double) fv);
                     else if (key == "aux_cpus") req_aux_cpus = std::atoi(tok.c_str() + eq + 1) != 0 ? 1 : 0;
+                    else if (key == "spec_t") req_spec_t = std::clamp(std::atoi(tok.c_str() + eq + 1), 0, 8);
+                    else if (key == "spec_s") req_spec_s = std::clamp(std::atoi(tok.c_str() + eq + 1), 0, 8);
                     else if (key == "slot_read") req_slot_read = std::atoi(tok.c_str() + eq + 1) != 0;
                     else if (key == "img_keys") {
                         req_img_keys.clear();
@@ -18200,6 +18206,25 @@ int main(int argc, char** argv) {
                 S_mtp = req_df2 ? S_mtp_wide : S_mtp_narrow;
                 S_look = req_df2 ? S : std::min(S, S_mtp_narrow);
                 if (use_mtp) mtp.set_max_drafts(S_mtp - 1);
+            }
+            // spec_t= / spec_s= (request keys): how deep the drafter may propose and how wide this request verifies,
+            // both clamped below the start-up window, 0 = the drafter's own.  Every request sets the depths here: nothing
+            // carries over from a capped request to the next.  A changed DFlash2 cap re-captures its window graphs: the
+            // first request after a change pays it - a calibration key like pcie_frac, not a per-turn policy.
+            {
+                const int cap_t = req_spec_t > 0 ? std::min(req_spec_t, S) : S;
+                const int cap_s = req_spec_s > 0 ? std::min(req_spec_s, S) : S;
+                if (!(use_df2 && o.draft_auto)) S_look = S;   // a drafter not switched per request: the start-up lookup depth
+                S_look = std::min(S_look, cap_s);
+                if (use_df2 && o.draft_auto) S_mtp = std::min(S_mtp, std::min(cap_t, cap_s));
+                if (use_df2) {   // the start-up formula, then this request's caps (set_max_drafts no-ops when unchanged)
+                    int nd = (o.mtp_max_t > 0 ? std::min(o.mtp_max_t, o.spec) : o.spec) - 1;
+                    df2.set_max_drafts(std::max(std::min({nd, cap_t - 1, cap_s - 1}), 1));
+                }
+                if (use_mtp) {
+                    const int wt = std::min((use_df2 && o.draft_auto) ? S_mtp : mtp_start_t, std::min(cap_t, cap_s));
+                    if (mtp.max_t() != wt) mtp.set_max_drafts(wt - 1);
+                }
             }
             if (req_prefill_only && (geni || o.batch > 0 || n < 2)) {
                 std::printf("ERR prefill=1 needs a text prompt of at least 2 tokens and no --batch\n");
