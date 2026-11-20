@@ -3442,6 +3442,35 @@ def discover_serve_servers(proc_dir: str = "/proc", me: int | None = None) -> li
     return urls
 
 
+def observed_vram_read(path: str, key: str) -> int:
+    """What the last real start of exactly these engine arguments took off the card, in MiB; 0 when it was
+    never measured (the first start) or the sidecar cannot be read - then the formula's floor decides alone."""
+    try:
+        v = json.loads(Path(path).read_text(encoding="utf-8")).get(key)
+        return int(v) if isinstance(v, int) and v > 0 else 0
+    except Exception:
+        return 0
+
+
+def observed_vram_write(path: str, key: str, mib: int) -> None:
+    """Record one start's measured VRAM footprint under its engine-arguments key; written through a temp
+    file so a kill mid-write never costs the earlier measurements."""
+    d = {}
+    try:
+        d = json.loads(Path(path).read_text(encoding="utf-8"))
+        if not isinstance(d, dict):
+            d = {}
+    except Exception:
+        pass
+    d[key] = int(mib)
+    try:
+        tmp = Path(str(path) + ".tmp")
+        tmp.write_text(json.dumps(d, indent=1), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError as e:
+        print(f"[strata] could not save the observed VRAM footprint: {e}", flush=True)
+
+
 def drafting_vram_mib(cfg: dict, backend: str | None, archs) -> float | None:
     """MiB of graphics memory of the ONE card DFlash2 would run on, for the drafter's confidence (drafting.expected_slots); None for several cards, a
     chip that shares the computer's memory (Strix Halo, the Spark: their experts are all "resident") or a card the driver does not answer for."""
@@ -4015,6 +4044,10 @@ class Service:
         self.evict_grace_s = 60.0
         self.evict_self_url = ""                         # the URL our asks name us with (asked_by)
         self.unloaded_by = {}                            # peer URL -> when its ask took our model (the grace's clock)
+        # the observed footprint behind vram_need "auto": a start measures what it really took off the card and
+        # keeps it beside the engine's log; the formula prices a floor, not a footprint, when the expert cache fills eagerly
+        self.observed_vram_path = None
+        self.observed_vram_key = ""                      # engine-arguments identity the footprint is kept under
         self.vram_reserve = None                         # #533: the last POST /v1/vram reserve (None: the start's)
         self.vram_reserve_asked = False                  # a POST /v1/vram was made (vram_reserve None is then asked)
         self.vision_held = False                         # an elastic encoder holds VRAM the expert cache gave it
@@ -4651,6 +4684,7 @@ class Service:
                 print(f"[strata] the before_load command failed ({hook_failed}), but {free} MiB of VRAM is free: "
                       "loading", flush=True)
         vision_started = False
+        f_pre = self.free_vram_mib() if self.observed_vram_key else None   # the card as the vision encoder and the engine find it
         if self._vision_down():                         # first, as at a start: a GPU encoder takes its VRAM before
             print("[strata] starting the vision encoder ...", flush=True)   # the engine sizes its cache
             try:
@@ -4678,6 +4712,16 @@ class Service:
                 raise EngineDied(f"the engine could not be started: {e}") from e
             raise
         print("[strata] the engine is running again", flush=True)
+        if self.observed_vram_key and f_pre is not None:
+            f_post = self.free_vram_mib()
+            took = f_pre - f_post if f_post is not None else 0
+            if took > 512:                    # a footprint, not a settle's noise; a start that ends up gaining VRAM back is not priced
+                if self.observed_vram_path:
+                    observed_vram_write(self.observed_vram_path, self.observed_vram_key, took)
+                if took > self.vram_need_auto_mib:
+                    self.vram_need_auto_mib = took
+                print(f"[strata] this start took {took} MiB of VRAM (measured on the card); the \"auto\" line "
+                      "carries it for the next start", flush=True)
         if self.restore_after_load:                      # an image job unloaded it: its conversation comes back
             images_api.restore_session(self)
         if self.vram_reserve is not None and hasattr(self.engine, "vram"):   # #533: the reserve asked for last
@@ -8827,6 +8871,15 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
         else:
             print("[strata] vram_need \"auto\": the estimate makes no claim for this start; only a configured "
                   "min_free_vram_mib gates loads", flush=True)
+        spawn_args = engine.spawn[1] if hasattr(engine, "spawn") else []
+        svc.observed_vram_key = hashlib.sha1(" ".join(str(x) for x in spawn_args).encode()).hexdigest()[:16]
+        obs_log = str(cfg.get("log") or "").strip()
+        svc.observed_vram_path = str(Path(obs_log).parent / "strata-vram-observed.json") if obs_log else None
+        obs = observed_vram_read(svc.observed_vram_path, svc.observed_vram_key) if svc.observed_vram_path else 0
+        if obs > svc.vram_need_auto_mib:
+            svc.vram_need_auto_mib = obs
+            print(f"[strata] vram_need auto: the card gave {obs} MiB to this start's last real run - that is "
+                  "the line now, above vram_fit's floor", flush=True)
     # --slot-save-path is relative to the working directory the server was started in; the config's slot_save_path
     # to the config's "cwd" (the engine's folder) when it has one.  Either way the engine gets an absolute path.
     if a.slot_save_path or cfg.get("slot_save_path"):

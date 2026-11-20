@@ -66,14 +66,19 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   ([E2 record](../bench/results/2026-11-05-e2-profile-fill-advise/README.md),
   [startup phases](../bench/results/2026-11-05-serve-startup-time/README.md): warm restart 8.3 s).
 
-## Serve: the VRAM load gate (6 files)
+## Serve: the VRAM load gate (7 files)
 
 - `terminal/serve/server.py` (the `vram_fit_start_need` wiring), `terminal/serve/server_parts/engines.py`,
   `terminal/strata_control/vram_fit.py` (+**added** `terminal/serve/test_vram_load_gate.py`,
-  `terminal/serve/test_evict_peers.py`, **modified** `terminal/serve/telemetry.py`): the model **load** gate.
-  `vram_need` raises the gate line above `min_free_vram_mib` - a number, or `"auto"` pricing the model's own
-  VRAM floor once per start (`vram_fit.start_need_mib()`); `load_wait_s` lets an unloaded model wait for the
-  card to come back instead of failing (503 + `Retry-After` as before).  On GB10 the "free VRAM" the gate
+  `terminal/serve/test_evict_peers.py`, `terminal/serve/test_observed_vram.py`, **modified**
+  `terminal/serve/telemetry.py`): the model **load** gate.
+  `vram_need` raises the gate line above `min_free_vram_mib` - a number, or `"auto"`: `vram_fit.start_need_mib()`
+  prices the model's own floor, and a start's **measured footprint** - the card's free VRAM around the start,
+  kept under the engine-arguments hash in `strata-vram-observed.json` beside the engine's log - raises that
+  line to what the last real run of these arguments really took, the higher of the two deciding.  The floor
+  alone is no footprint when `--expert-cache` fills eagerly: on this machine it priced 8.2 GiB where the pack
+  takes ~54 GiB.  `load_wait_s` lets an unloaded model wait for the card to come back instead of failing
+  (503 + `Retry-After` as before).  On GB10 the "free VRAM" the gate
   waits on comes from the CUDA driver read `terminal/serve/telemetry.py` adds (`cuMemGetInfo`, cached),
   NVML reporting no frame buffer at all on unified memory.
   The **unload** side stays upstream's - on this machine an unload is expensive (the 46.84 GiB GPU expert
