@@ -110,12 +110,32 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
 
 ## Config JSON: the keys the fork adds (7)
 
-- `vram_need`, `load_wait_s` and the five pressure-eviction keys (`evict_on_pressure`, `evict_peers`,
-  `evict_discover`, `evict_order`, `evict_grace_s`) are the **only** keys the fork adds to the serve config
-  JSON (mechanics in the VRAM load gate section above).  Everything else the server reads from that file - `min_free_vram_mib`,
-  `idle_unload_s`, `lazy_load`, `fit_max_tokens`, the `before_load` hooks - is upstream's.  The set was derived
-  by diffing the `cfg.get(...)` key sets of the two servers, not by reading docs, so a key the fork merely
-  wires differently does not sneak in.  Adjacent, but not config keys: `STRATA_RUN_CONFIG_RO` is an environment
+- `vram_need`, `load_wait_s` and the five pressure-eviction keys are the **only** keys the fork adds to the
+  serve config JSON (mechanics in the VRAM load gate section above).  The set is re-derived live, not read
+  from docs: a symmetric diff of the `cfg.get(...)` key sets of the two `serve/server.py` (fork vs
+  `~/Strata`, re-run 2026-11-20 - a key the fork merely wires differently does not sneak in).  Enumerated:
+  - `"vram_need"`: the load gate's own line - a MiB number, or `"auto"` to price the model's own VRAM floor
+    once per start; the higher of this and `min_free_vram_mib` gates, a hand-set floor is never undercut.
+    No default (off).
+  - `"load_wait_s"`: how long an unloaded model waits past the memory-settle wait for its line of free VRAM
+    (0: `vram_free_wait_s` alone).  Default 0.
+  - `"evict_on_pressure"`: the pressure eviction's master switch - a load short on free VRAM asks the
+    machine's other strata servers to unload theirs first.  Off by default; with no line set it falls back
+    to `vram_need: "auto"` as the compared line, and `--offline` refuses profiles that set it.
+  - `"evict_peers"`: the servers to ask - `"http://host:port"` strings or objects `{"url", "api_key",
+    "priority", "protect"}`; `protect: true` never gets asked.  Default: none named.
+  - `"evict_discover"`: also find the machine's other `serve/server.py --port N` in `/proc` (Linux; empty
+    where there is no process table).  Default off.
+  - `"evict_order"`: `"idle"` (the peer idle longest first, by its own `/v1/status`
+      `activity.last_request_at`) or `"priority"` (the config's `priority`, lower number first).
+      Default `"idle"`.
+  - `"evict_grace_s"`: seconds a server refuses to ask back the peer that just unloaded it (the ping-pong
+    stop).  Default 60.
+  Everything else the server reads from that file - `min_free_vram_mib`,
+  `idle_unload_s`, `lazy_load`, `fit_max_tokens`, the `before_load` hooks - is upstream's.  The live diff's
+  one candidate dropped on re-check: `layer_split` shows as fork-only only because the fork's
+  `vram_fit_start_need` names it as a literal; the key itself is upstream's, read through `layer_split_of`.
+  Adjacent, but not config keys: `STRATA_RUN_CONFIG_RO` is an environment
   variable (the read-only run config section above), and the fork adds **no** key to the run-config schema
   (`terminal/serve/runconfig.py`) - the `lazy_load` there is upstream's, the fork only routes its lazy wake
   through the VRAM gate.
