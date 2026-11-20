@@ -8800,7 +8800,8 @@ def _main(argv=None, *, lifecycle_event=None, interrupt_exit_code: int = 0) -> i
     except (TypeError, ValueError):
         print(f"[strata] \"evict_grace_s\" in the config is not a number; using {svc.evict_grace_s:g} s", flush=True)
     if svc.evict_on_pressure:
-        svc.evict_peers = parse_evict_peers(cfg.get("evict_peers"))
+        if "evict_peers" in cfg:                                  # not set is silence; only a set-and-unreadable value speaks
+            svc.evict_peers = parse_evict_peers(cfg.get("evict_peers"))
         svc.evict_self_url = f"http://127.0.0.1:{a.port}"
         if not svc.vram_need_mib()[0]:
             svc.vram_need = "auto"     # an eviction compares the card to a line: the model's own estimate when none is set
