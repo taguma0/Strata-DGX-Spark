@@ -415,7 +415,7 @@ class TerminalAndApp(Base):
 
     def test_without_a_list_the_table_is_the_same(self):
         s, rows = self.table()
-        self.assertEqual([r["family"] for r in rows], [f for f in fresh_setup("setup_reference").FAMILIES] + ["qwen36"])
+        self.assertEqual([r["family"] for r in rows], [f for f in fresh_setup("setup_reference").FAMILIES] + ["qwen36", "hy4-flash"])
         self.assertTrue(all("available" not in r for r in rows))
 
     def test_a_cached_list_adds_its_sizes_after_the_built_in_ones_and_hides_what_cannot_run(self):

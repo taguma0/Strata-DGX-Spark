@@ -505,8 +505,10 @@ class ControlMode(unittest.TestCase):
 
     def test_other_platforms_and_the_terminal_still_use_their_own_setup(self):
         src = (ROOT / "setup.py").read_text(encoding="utf-8")
-        self.assertIn('if sys.platform == "darwin" and not CONTROL:', src)
-        self.assertIn('if sys.platform == "darwin" and CONTROL:', src)
+        # upstream 0.2.18 moved these guards (the Hy4-Flash ask joins the Terminal's, Control Mac
+        # nests inside `if sys.platform == "darwin":`) but left the test strings behind: pin the new shape.
+        self.assertIn('if sys.platform == "darwin" and not CONTROL and not _hy4_ask:', src)
+        self.assertIn('return mac_control_setup(a)', src)
 
 
 class MacAppUnsloth(unittest.TestCase):
