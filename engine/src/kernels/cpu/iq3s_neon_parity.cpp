@@ -35,7 +35,7 @@ namespace {
 
 constexpr int kN = 2560;       // n_embd (10 blocks of QK_K)
 constexpr int kFF = 640;       // gate/up rows per expert (n_ff)
-constexpr int kBS = 164; // sizeof(block_iq3_s): d, dmin, signs[32], qs[128]        // sizeof(block_iq3_s)
+constexpr int kBS = 110; // sizeof(block_iq3_s): d, qs[64], qh[8], signs[32], scales[4]        // sizeof(block_iq3_s)
 constexpr int kMaxT = 8;
 
 uint64_t mix(uint64_t& s) {   // splitmix64
@@ -130,7 +130,7 @@ void run_bench(int mb) {
     float* outp[kMaxT];
     for (int t = 0; t < kMaxT; ++t) { actp[t] = act[t].data(); out[t].assign(rows, 0.f); outp[t] = out[t].data(); }
     const ggml_vec_dot_t dn = ggml_get_type_traits_cpu(GGML_TYPE_IQ3_S)->vec_dot;
-    std::printf("iq3xxs_neon bench: %d gate/up rows x n=%d, one thread, %d MB of gate+up blobs\n", rows, kN, mb);
+    std::printf("iq3s_neon bench: %d gate/up rows x n=%d, one thread, %d MB of gate+up blobs\n", rows, kN, mb);
     for (const int nt : {1, 2, 4, 8}) {
         double ms_g = 1e300, ms_k = 1e300;
         for (int rep = 0; rep < 3; ++rep) {
