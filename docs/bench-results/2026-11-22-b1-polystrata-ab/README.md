@@ -61,3 +61,20 @@ confirmation before being quoted as a batch effect.
 Regenerate: clone the live config per arm as `strata-ab-<arm>.json` (extra args for
 batch2/aux/batch2aux, a distinct log per arm; env arms stay on the serve command), run
 `/tmp/b1_driver.sh`.
+
+## Follow-ups recorded (same day, no new rounds)
+
+- tail skip: the production cache holds every expert on the GPU (`every expert is in the GPU
+  cache (24576 of 24576)`), so the skip has no CPU miss to take at any rank; the arm was
+  inert by construction. The config's `STRATA_ROUTE_TAIL_SKIP=0` is the fork's documented
+  default pin (owner flipped the default off at 0.2.17/0.1.62; serve's child_env injects
+  "0" anyway) - keep it as engine-version insurance.
+- B2 (warm_start / pinned system prompt): **no port.** Measured live with a ~12K shared
+  prefix: cold read 5.87 s; a second request with the same prefix, any session, no marker:
+  0.45 s; same prefix with a different tail: 0.64 s. The serve's default `--prompt-cache 6`
+  checkpoint pool already shares prefixes across sessions at prompt-read speed, and
+  `strata_prefix` (already in serve) pins a boundary checkpoint against eviction for
+  under-pressure cases. What the fork lacks versus PolyStrata is only KV that survives an
+  engine restart - worth at most one ~6 s re-read per new session after a restart, against
+  serialized-KV format work and bit-drift risk. Not porting. If parked conversations ever
+  exceed the slots/budget, raise `--conversation-cache-slots` / `--conversation-cache-mib`.
