@@ -204,7 +204,8 @@ if(STRATA_CPU_ARM64)
               src/kernels/cpu/iq4nl_neon.cpp
               src/kernels/cpu/iq3xxs_neon.cpp
               src/kernels/cpu/iq3s_neon.cpp
-              src/kernels/cpu/iq2s_neon.cpp)
+              src/kernels/cpu/iq2s_neon.cpp
+              src/kernels/cpu/iq2xs_neon.cpp)
 elseif(STRATA_CPU_X86)
   add_library(strata_kernels_cpu STATIC src/kernels/cpu/expert.cpp src/kernels/cpu/pool.cpp
               src/kernels/cpu/expert_layout.cpp src/kernels/cpu/q2_avx2.cpp src/kernels/cpu/hadamard.cpp)
@@ -239,6 +240,7 @@ if(STRATA_CPU_ARM64)
   set_source_files_properties(src/kernels/cpu/iq3xxs_neon.cpp PROPERTIES COMPILE_OPTIONS "-march=armv8.2-a+dotprod")
   set_source_files_properties(src/kernels/cpu/iq3s_neon.cpp PROPERTIES COMPILE_OPTIONS "-march=armv8.2-a+dotprod")
   set_source_files_properties(src/kernels/cpu/iq2s_neon.cpp PROPERTIES COMPILE_OPTIONS "-march=armv8.2-a+dotprod")
+  set_source_files_properties(src/kernels/cpu/iq2xs_neon.cpp PROPERTIES COMPILE_OPTIONS "-march=armv8.2-a+dotprod")
 elseif(MSVC)
   set_source_files_properties(src/kernels/cpu/expert.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX512")
   set_source_files_properties(src/kernels/cpu/q2_avx2.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
@@ -548,6 +550,11 @@ if(STRATA_BUILD_TESTS)
     target_link_libraries(iq2s_neon_parity PRIVATE strata_kernels_cpu)
     add_test(NAME iq2s_neon_parity COMMAND iq2s_neon_parity)
     set_tests_properties(iq2s_neon_parity PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
+    # DGX Spark fork WIP: the Arm64 IQ2_XS/IQ2_XXS gate/up rows (iq2xs_neon.cpp) vs ggml-cpu's dots.
+    add_executable(iq2xs_neon_parity src/kernels/cpu/iq2xs_neon_parity.cpp)
+    target_link_libraries(iq2xs_neon_parity PRIVATE strata_kernels_cpu)
+    add_test(NAME iq2xs_neon_parity COMMAND iq2xs_neon_parity)
+    set_tests_properties(iq2xs_neon_parity PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
   endif()
 
   add_executable(expert_parity src/kernels/cpu/expert_parity.cpp)

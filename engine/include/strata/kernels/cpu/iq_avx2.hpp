@@ -67,6 +67,14 @@ void iq3s256_gu_rows(const uint8_t* blob, size_t gu_row, size_t up_off, int n, c
 void iq2s256_gu_rows(const uint8_t* blob, size_t gu_row, size_t up_off, int n, const void* const* act,
                      int nt, float* const* ff, int r0, int r1);
 
+/// The IQ2_XS / IQ2_XXS gate/up rows on Arm64 (iq2xs_neon.cpp): same frame as iq2s256_gu_rows,
+/// bit-identical to ggml's vec_dot; native_expert.cpp gates on cpu_neon_dot_ok(), STRATA_NO_IQ2XS
+/// falls back.
+void iq2xs256_gu_rows(const uint8_t* blob, size_t gu_row, size_t up_off, int n, const void* const* act,
+                      int nt, float* const* ff, int r0, int r1);
+void iq2xxs256_gu_rows(const uint8_t* blob, size_t gu_row, size_t up_off, int n, const void* const* act,
+                       int nt, float* const* ff, int r0, int r1);
+
 /// IQ4_NL is a 32-value-block format, so this does not go through iq256_rows (QK_K blocks, Q8_K acts).
 void iq4nl256_down_rows(const uint8_t* w, size_t row_bytes, int n, const void* const* hq, int nt,
                         float* const* out, int r0, int r1);

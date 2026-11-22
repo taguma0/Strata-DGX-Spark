@@ -743,6 +743,21 @@ void native_gu_rows_impl(const NativeFmt& f, const uint8_t* blob, const void* co
         iq3xxs256_gu_rows(blob, f.gu_row, f.up_off, n, act, nt, ff, r0, r1);
         return;
     }
+    // DGX Spark fork: the same SDOT frame for the IQ3_S / IQ2_S / IQ2_XS / IQ2_XXS gate/up rows
+    // (iq3s_neon.cpp, iq2s_neon.cpp, iq2xs_neon.cpp).  All bit-identical to the ggml fallback below
+    // at any nt (parity harnesses iq3s/iq2s/iq2xs_neon_parity); STRATA_NO_IQ3S, STRATA_NO_IQ2S and
+    // STRATA_NO_IQ2XS (the last one for both iq2x formats) fall back per family.
+    static const bool iq3s_neon = cpu_neon_dot_ok() && std::getenv("STRATA_NO_IQ3S") == nullptr;
+    static const bool iq2s_neon = cpu_neon_dot_ok() && std::getenv("STRATA_NO_IQ2S") == nullptr;
+    static const bool iq2x_neon = cpu_neon_dot_ok() && std::getenv("STRATA_NO_IQ2XS") == nullptr;
+    if (f.tail_off == 0 && ((iq3s_neon && f.gu_type == 21) || (iq2s_neon && f.gu_type == 22) ||
+                            (iq2x_neon && (f.gu_type == 16 || f.gu_type == 17)))) {
+        if (f.gu_type == 21)      iq3s256_gu_rows(blob, f.gu_row, f.up_off, n, act, nt, ff, r0, r1);
+        else if (f.gu_type == 22) iq2s256_gu_rows(blob, f.gu_row, f.up_off, n, act, nt, ff, r0, r1);
+        else if (f.gu_type == 17) iq2xs256_gu_rows(blob, f.gu_row, f.up_off, n, act, nt, ff, r0, r1);
+        else                      iq2xxs256_gu_rows(blob, f.gu_row, f.up_off, n, act, nt, ff, r0, r1);
+        return;
+    }
 #endif
     const Tr dot = traits(f.gu_type);
     // BW-G: the weights a few rows ahead are requested while this row is computed (row_prefetch.hpp); the same bits
