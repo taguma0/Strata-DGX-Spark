@@ -1,0 +1,26 @@
+19:strata generate: experimental native Q6_K head, 521472000 bytes, in 0.2 s
+22:strata generate: file tier (Linux defaults, the GGUF read in place): page-cached experts computed from the mapping (STRATA_COLD_OVERLAP=4), io prefetch with whole-blob preads on 8 I/O threads, the decode's read-ahead only while the page cache has room for it and it pays (STRATA_IO_PF_GATE=1); off: STRATA_COLD_OVERLAP=0, STRATA_IO_PREFETCH=0, STRATA_IO_PF_GATE=0
+37:strata generate: pre-filled 7536 of 7536 slots from the profile in 11.3 s (1364 MB/s); slot 0 verified
+43:strata: prompt kernels: chunks of 1024 tokens or more run 48 of 48 layers on the fused kernels; shorter chunks run 48 on the staged fused entry.
+50:strata dflash2: 106299-token draft head (212.9 MiB), drafter 800 MiB of VRAM (Q4_0 weights)
+51:strata serve: DFlash2 drafter on (/home/taguma/Strata-data/dflash2/qwen3.8-flash-next-dflash2.q4_0.pack, graphs captured in 0 ms); windows up to 6 tokens; no MTP layer is loaded (--draft-fallback none)
+54:strata verify: batch rows in one launch: attention on (STRATA_BATCH_ATTN_ROWS), GDN on (STRATA_BATCH_GDN_GROUPS); the KV streams (--kv-resident), so attention keeps one launch per row
+61:strata verify: captured the 6-token window (upload no error, sync no error) in 26.0 ms
+82:strata generate: experimental native Q6_K head, 521472000 bytes, in 1.2 s
+85:strata generate: file tier (Linux defaults, the GGUF read in place): page-cached experts computed from the mapping (STRATA_COLD_OVERLAP=4), io prefetch with whole-blob preads on 8 I/O threads, the decode's read-ahead only while the page cache has room for it and it pays (STRATA_IO_PF_GATE=1); off: STRATA_COLD_OVERLAP=0, STRATA_IO_PREFETCH=0, STRATA_IO_PF_GATE=0
+100:strata generate: pre-filled 12768 of 12768 slots from the profile in 62.3 s (420 MB/s); slot 0 verified
+106:strata: prompt kernels: chunks of 1024 tokens or more run 48 of 48 layers on the fused kernels; shorter chunks run 48 on the staged fused entry.
+129:strata generate: experimental native Q6_K head, 521472000 bytes, in 0.1 s
+132:strata generate: file tier (Linux defaults, the GGUF read in place): page-cached experts computed from the mapping (STRATA_COLD_OVERLAP=4), io prefetch with whole-blob preads on 8 I/O threads, the decode's read-ahead only while the page cache has room for it and it pays (STRATA_IO_PF_GATE=1); off: STRATA_COLD_OVERLAP=0, STRATA_IO_PREFETCH=0, STRATA_IO_PF_GATE=0
+147:strata generate: pre-filled 24576 of 24576 slots from the profile in 10.4 s (4821 MB/s); slot 0 verified
+149:strata generate: routing-aware prefetch off (every expert is in the GPU caches; STRATA_LOOKAHEAD=1 runs it)
+155:strata: prompt kernels: chunks of 1024 tokens or more run 48 of 48 layers on the fused kernels; shorter chunks run 48 on the staged fused entry.
+161:strata dflash2: 106299-token draft head (212.9 MiB), drafter 800 MiB of VRAM (Q4_0 weights)
+162:strata serve: DFlash2 drafter on (/home/taguma/Strata-data/dflash2/qwen3.8-flash-next-dflash2.q4_0.pack, graphs captured in 0 ms); windows up to 6 tokens; no MTP layer is loaded (--draft-fallback none)
+165:strata verify: batch rows in one launch: attention on (STRATA_BATCH_ATTN_ROWS), GDN on (STRATA_BATCH_GDN_GROUPS); the KV streams (--kv-resident), so attention keeps one launch per row
+172:strata verify: captured the 6-token window (upload no error, sync no error) in 7.4 ms
+174:strata verify: captured the 5-token window (upload no error, sync no error) in 5.7 ms
+176:strata verify: captured the 1-token window (upload no error, sync no error) in 5.9 ms
+178:strata verify: captured the 3-token window (upload no error, sync no error) in 5.4 ms
+180:strata verify: captured the 4-token window (upload no error, sync no error) in 5.1 ms
+182:strata verify: captured the 2-token window (upload no error, sync no error) in 5.6 ms
