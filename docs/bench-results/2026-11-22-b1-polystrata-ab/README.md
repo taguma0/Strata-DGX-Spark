@@ -47,6 +47,9 @@ base/base2 drift: decode 1.7%, prompts 0.5%, probe solo 0.4%.
 - **STRATA_EXPDEC=1: neutral, not adopted** (all metrics inside noise; it stays an
   AMD-gfx12 default upstream and off on CUDA builds).
 
+Applied to the production config on 2026-11-22: `--batch 2 --aux-cpus auto` in `args`,
+`STRATA_CACHE_MESSAGE_BOUNDARY=1` in the config `env` map (forwarded to the engine).
+
 ## What the numbers do and do not show
 
 Byte-identity was not gated this campaign (batch-slot arithmetic; the msgb arm changes
