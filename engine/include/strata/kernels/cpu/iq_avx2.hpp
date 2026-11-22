@@ -55,6 +55,13 @@ void q8k_quant_avx2(const float* x, void* y, int64_t n);
 void iq3xxs256_gu_rows(const uint8_t* blob, size_t gu_row, size_t up_off, int n, const void* const* act,
                        int nt, float* const* ff, int r0, int r1);
 
+/// The IQ3_S gate/up rows (blob = [gate rows | up rows], SwiGLU like the dispatch's fallback) on
+/// Arm64 (iq3s_neon.cpp): WIP - Phase 1 carries the iq3xxs frame with ggml's dot; Phase 2 replaces
+/// the inner product with the decode-then-SDOT form, bit-identical to ggml's vec_dot.  Gated by
+/// native_expert.cpp on cpu_neon_dot_ok(), STRATA_NO_IQ3S falls back to ggml-cpu's single-token dot.
+void iq3s256_gu_rows(const uint8_t* blob, size_t gu_row, size_t up_off, int n, const void* const* act,
+                     int nt, float* const* ff, int r0, int r1);
+
 /// IQ4_NL is a 32-value-block format, so this does not go through iq256_rows (QK_K blocks, Q8_K acts).
 void iq4nl256_down_rows(const uint8_t* w, size_t row_bytes, int n, const void* const* hq, int nt,
                         float* const* out, int r0, int r1);
