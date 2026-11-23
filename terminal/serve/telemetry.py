@@ -121,11 +121,52 @@ class _Nvml:
 
 
 # --------------------------------------------------------------------------------------- CUDA driver (GB10: no NVML frame buffer)
+def meminfo_kb(path="/proc/meminfo"):
+    """Machine RAM as the kernel keeps it, in kB: MemTotal and MemAvailable ({} when unreadable - there is
+    no /proc on the Windows box the same reader runs on). MemAvailable is the kernel's own "a process can
+    allocate this much without paging" estimate: free memory plus the part of the page cache it would
+    happily reclaim."""
+    try:
+        with open(path, encoding="ascii") as f:
+            want = {"MemTotal": None, "MemAvailable": None}
+            for line in f:
+                key, _, rest = line.partition(":")
+                if key in want:
+                    parts = rest.split()
+                    if parts:
+                        want[key] = int(parts[0])
+        return want
+    except (OSError, ValueError):
+        return {}
+
+
+def unified_used(used, total, mem):
+    """On a unified-memory card (GB10/Tegra: the card's total is the machine's RAM) the `used` the VRAM gate
+    should judge by; None to keep the driver's figures where the blend does not apply - a discrete frame
+    buffer (the machine's RAM says nothing about the card) or nothing to go on.
+
+    On GB10 cuMemGetInfo's free is a MemFree-style view: clean file pages - the model files' page cache a
+    previous run warmed, the mmap'd experts - sit in `used` forever, while a model being loaded gets that
+    exact memory back, because the kernel reclaims file cache under allocation pressure. A gate waiting on
+    the raw figure then waits for memory the GPU never holds (measured 2026-11-23: free pinned at 79.1 GiB
+    against an observed line of 81969 MiB while 40 GiB of reclaimable page cache sat right there - every
+    load timed out). So `used` is lowered to the kernel's own line: a unified card is worth MemAvailable."""
+    mt, avail = mem.get("MemTotal"), mem.get("MemAvailable")
+    if not used or not total or not mt or not avail:
+        return None
+    if abs(total - mt * 1024) * 20 > total:      # card total more than 5% off the machine's RAM: discrete
+        return None
+    floor = max(0, total - avail * 1024)         # MemAvailable of free is the floor a loader can reach
+    return floor if floor < used else None
+
+
 class _CudaMem:
     """The CUDA driver's view of the memory the card can still give out, through ctypes - the driver API itself,
     no bindings and no new dependency. For GB10-class machines where NVML reports no frame buffer at all (DGX
     Spark: nvidia-smi prints [N/A] for memory, nvmlDeviceGetMemoryInfo fails): the card's memory is unified, so
-    cuMemGetInfo's figures are the honest "free for a model to load" line the serve config's VRAM gate waits on.
+    cuMemGetInfo's free is an OS MemFree view there - which counts the whole (reclaimable) page cache as
+    used - so unified_used() below lifts the figures to what a model can actually take: that, and only
+    that, is the "free for a model to load" line the serve config's VRAM gate waits on.
     The driver API wants an active context: retain the card's primary context, make it current, read, set none,
     release - about 0.1 s a read with no footprint left behind (verified on GB10), so the figure is cached a
     moment and failed reads retry no faster than that."""
@@ -160,6 +201,9 @@ class _CudaMem:
                         get = getattr(self.lib, "cuMemGetInfo_v2", None) or self.lib.cuMemGetInfo
                         if get(ctypes.byref(free), ctypes.byref(total)) == 0 and total.value:
                             out["mem_used"], out["mem_total"] = int(total.value - free.value), int(total.value)
+                            u = unified_used(out["mem_used"], out["mem_total"], meminfo_kb())
+                            if u is not None:
+                                out["mem_used"] = u
                     finally:
                         self.lib.cuCtxSetCurrent(ctypes.c_void_p(0))
                         release(self.dev)
