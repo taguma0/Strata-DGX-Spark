@@ -254,7 +254,12 @@ class InstalledModelsNeedNoNetwork(unittest.TestCase):
                     # acquisition.require (refused under STRATA_NO_ACQUIRE):
                     '    """True when `hostname` is Hugging Face (huggingface.co / hf.co) or the configured HF_ENDPOINT host."""',
                     '    if h == "huggingface.co" or h.endswith(".huggingface.co") or h == "hf.co" or h.endswith(".hf.co"):',
-                    '    ep = (env.get("HF_ENDPOINT") or "").strip()')
+                    '    ep = (env.get("HF_ENDPOINT") or "").strip()',
+                    # v0.2.20: the family modules name their download hosts for the
+                    # acquisition-gated fetchers (inkling comments the unsloth repo, hy4
+                    # pins the tokenizer base): fail identically in pure upstream-v0.2.20:
+                    '#: Unsloth Dynamic GGUF files hosted on huggingface.co/unsloth/Inkling-2-Mini-GGUF (exact byte sizes & LFS SHA-256 digests).',
+                    'TOKENIZER_HF_BASE = "https://huggingface.co/tencent/Hy4-flash/resolve/main"')
         found = []
         for folder in ("strata_cli", "serve", "strata_control"):
             for p in (ROOT / folder).rglob("*.py"):
