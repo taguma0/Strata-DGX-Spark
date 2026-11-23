@@ -505,9 +505,10 @@ class ControlMode(unittest.TestCase):
 
     def test_other_platforms_and_the_terminal_still_use_their_own_setup(self):
         src = (ROOT / "setup.py").read_text(encoding="utf-8")
-        # upstream 0.2.18 moved these guards (the Hy4-Flash ask joins the Terminal's, Control Mac
-        # nests inside `if sys.platform == "darwin":`) but left the test strings behind: pin the new shape.
-        self.assertIn('if sys.platform == "darwin" and not CONTROL and not _hy4_ask:', src)
+        # upstream 0.2.19 joined the Inkling-2-Mini ask to the Terminal darwin guard
+        # (and its own test still pins the 0.2.18 string: it fails in a pure upstream-v0.2.19
+        # worktree too): pin the new shape.
+        self.assertIn('if sys.platform == "darwin" and not CONTROL and not _hy4_ask and not _ink_ask:', src)
         self.assertIn('return mac_control_setup(a)', src)
 
 
