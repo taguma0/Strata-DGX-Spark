@@ -420,8 +420,18 @@ namespace {
 // iq_avx2.cpp is compiled for AVX2 (an AVX-only CPU, or STRATA_FORCE_ISA=avx, keeps ggml's).  STRATA_NO_Q8K_AVX2=1:
 // ggml's on any CPU.
 bool q8k_avx2(int type) {
+#if defined(__aarch64__)
+    // Arm64 (GB10 fork): cpu_avx2_ok() passes as the "AVX2-class" gate for the NEON 256-bit expert
+    // kernels, but the AVX-2 copy of the Q8_K activation quantizer is not compiled here (its
+    // portable_stubs.cpp stand-in aborts: "the Q8_K quantizer is an x86-64 (AVX) kernel").  The
+    // quant layer's own Q8_K kernel (NEON in src/quant/arm/arm_act.inc, byte-identical to
+    // quantize_q8_K_ref) quantizes these rows, so the selection below must never fire.
+    (void) type;
+    return false;
+#else
     static const bool on = cpu_avx2_ok() && std::getenv("STRATA_NO_Q8K_AVX2") == nullptr;
     return on && type == (int) kTQ8_K;
+#endif
 }
 // the older CPUs' copy (iq_avx1.cpp): byte-identical like the AVX-2 one, and only where AVX2 is absent (same
 // policy as STRATA_NO_IQ128 above; STRATA_NO_Q8K_AVX1=1 keeps ggml's scalar reference on those CPUs).
