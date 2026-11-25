@@ -43,8 +43,28 @@ _PROBES: dict = {}
 
 def wants_drafter(cfg: dict) -> bool:
     from strata_control import inkling_family
-    choice = str(cfg.get("drafting") or inkling_family.DEFAULT_DRAFTER).lower()
-    return choice != "off"
+    raw = cfg.get("drafting")
+    if raw is False:
+        return False
+    choice = str(raw if raw not in (None, "") else inkling_family.default_drafting(cfg.get("backend"))).strip().lower()
+    if choice == "auto":
+        # measured at the first start of this placement (strata_control/inkling_probe.py); no valid probe yet = off, and needs_drafting_probe() says so
+        from strata_control import inkling_probe
+        return inkling_probe.decision_of(cfg) == "on"
+    return choice not in ("off", "none", "false", "0")
+
+
+def needs_drafting_probe(cfg: dict) -> bool:
+    """True when this run config wants the measured drafting choice ("drafting": "auto", or nothing chosen) and
+    has no probe valid for its current placement: the launcher should run strata_control.inkling_probe.probe_run_config before the real start."""
+    from strata_control import inkling_family, inkling_probe
+    raw = cfg.get("drafting")
+    choice = str(raw if raw not in (None, "") else inkling_family.default_drafting(cfg.get("backend"))).strip().lower()
+    return (raw is not False and choice == "auto"
+            and inkling_probe.is_stale(cfg))
+
+
+_NOTE = {"text": ""}   # the probe's sentence for the next engine start's /metrics (drafting_note), set by engine_args
 
 
 def parse_info(text: str) -> dict:
@@ -59,9 +79,11 @@ def probe(exe: str | None, args: list, cfg: dict | None = None, timeout: float =
     model = next((args[i + 1] for i, a in enumerate(args) if a in ("--native", "--model") and i + 1 < len(args)), None)
     if not exe or not model or not Path(str(exe)).is_file():
         return None
+    vision = next((args[i + 1] for i, a in enumerate(args) if a == "--vision" and i + 1 < len(args)), None)
+    dspark = next((args[i + 1] for i, a in enumerate(args) if a == "--dspark" and i + 1 < len(args)), None)
     try:
         st = Path(str(exe)).stat()
-        key = (str(exe), st.st_mtime_ns, st.st_size, str(model))
+        key = (str(exe), st.st_mtime_ns, st.st_size, str(model), str(vision or ""), str(dspark or ""))
     except OSError:
         return None
     if key in _PROBES:
@@ -72,8 +94,13 @@ def probe(exe: str | None, args: list, cfg: dict | None = None, timeout: float =
     if dirs:
         var = "PATH" if os.name == "nt" else ("DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH")
         env[var] = os.pathsep.join(dirs + ([env[var]] if env.get(var) else []))
+    cmd = [str(exe), "--info", str(model)]
+    if vision:
+        cmd += ["--vision", str(vision)]
+    if dspark:
+        cmd += ["--dspark", str(dspark)]
     try:
-        done = subprocess.run([str(exe), "--info", str(model)], capture_output=True, text=True, errors="replace",
+        done = subprocess.run(cmd, capture_output=True, text=True, errors="replace",
                               timeout=timeout, env=env, cwd=str(Path(str(exe)).parent))
         info = parse_info(done.stdout) if done.returncode == 0 else None
     except (OSError, subprocess.SubprocessError):
@@ -83,33 +110,188 @@ def probe(exe: str | None, args: list, cfg: dict | None = None, timeout: float =
 
 
 def drafter_args(cfg: dict, info: dict | None = None) -> list[str]:
-    return ["--draft", "dspark"] if wants_drafter(cfg) and (info or {}).get("drafter") == "dspark" else []
+    from strata_control import inkling_family
+    if not wants_drafter(cfg):
+        return ["--draft", "off"]
+    if (info or {}).get("drafter") != "dspark":
+        return []
+    out = ["--draft", "dspark"]
+    # an engine that lists spec_opts=1 takes the window shape: one linear chain (the block drafter) unless the run config says otherwise
+    if (info or {}).get("spec_opts") == "1":
+        beam = cfg.get("draft_beam", inkling_family.DRAFT_BEAM)
+        if isinstance(beam, int) and not isinstance(beam, bool) and 1 <= beam <= 8:
+            out += ["--draft-beam", str(beam)]
+        if cfg.get("draft_adapt", inkling_family.DRAFT_ADAPT) is True:
+            out += ["--draft-adapt"]
+    return out
+
+
+def drafting_info(args: list, info: dict | None = None) -> dict[str, str]:
+    """Metrics/status view of Inkling-2-Mini's built-in DSpark drafter (`drafting`: `"dspark"` | `"off"`)."""
+    items = [str(a) for a in (args or ())]
+    mode = None
+    for i in range(len(items) - 1):
+        if items[i] == "--draft":
+            mode = items[i + 1].strip().lower()
+    text, _NOTE["text"] = _NOTE["text"], ""
+    if mode == "off":
+        return {"drafting": "off", "drafting_note": text}
+    # #6741: the engine says what it started with (INFO ... drafting=dspark|off). It leaves DSpark off when the CUDA layers are split across
+    # cards (and when it has no drafter or no room for it); the status used to repeat what was asked for and say "dspark" over an engine
+    # that ran without it. An older engine that does not say falls back to the asked mode, as before.
+    said = str((info or {}).get("drafting") or "").strip().lower()
+    if said == "dspark":
+        return {"drafting": "dspark", "drafting_note": text}
+    if said == "off":
+        asked = mode == "dspark" or (info or {}).get("drafter") == "dspark"
+        return {"drafting": "off", "drafting_note": _drafting_off_note(items, info) if asked else text}
+    if mode == "dspark" or (info or {}).get("drafter") == "dspark":
+        return {"drafting": "dspark", "drafting_note": text}
+    return {"drafting": "off", "drafting_note": text}
+
+
+DRAFTING_SPLIT_NOTE = ("Drafting is off: DSpark does not run yet when the model's layers are split across several cards (CUDA). "
+                       "On one card, with the rest of the experts in RAM, it does (--gpu N).")
+DRAFTING_NO_DRAFTER_NOTE = "Drafting is off: no DSpark drafter was found next to the model."
+DRAFTING_LEFT_OFF_NOTE = "Drafting is off: the engine started without the DSpark drafter (see its log for why, often too little free graphics memory)."
+
+
+def _drafting_off_note(items: list[str], info: dict | None) -> str:
+    """Plain words for 'DSpark was asked for and the engine left it off' (#6741)."""
+    if (info or {}).get("drafter") == "none":
+        return DRAFTING_NO_DRAFTER_NOTE
+    if "--layer-split" in items or str((info or {}).get("backend") or "").endswith("-ls"):
+        return DRAFTING_SPLIT_NOTE
+    return DRAFTING_LEFT_OFF_NOTE
+
+
+def _local_gpu_ordinals(n_gpus: int, max_g: int) -> str:
+    """Map Helper..Main visibility order (`CUDA_VISIBLE_DEVICES`/`HIP_VISIBLE_DEVICES`/`ZE_AFFINITY_MASK`)
+    to Main-first local ordinals for `strata-inkling --gpus` (`gpu_ids[0]` is primary/Main)."""
+    use = min(max_g, n_gpus)
+    main = n_gpus - 1
+    helpers = list(range(n_gpus - use, main))
+    return ",".join(str(i) for i in [main, *helpers])
+
+
+def _strip_flag(args: list[str], flag: str) -> list[str]:
+    out: list[str] = []
+    i = 0
+    while i < len(args):
+        if args[i] == flag:
+            i += 2 if i + 1 < len(args) and not str(args[i + 1]).startswith("--") else 1
+            continue
+        out.append(args[i])
+        i += 1
+    return out
+
+
+def fit_dspark(args: list, info: dict | None, announce: bool = True) -> tuple[list, dict | None]:
+    """The drafter file this engine can read. An engine that does not list dspark_f32_widen=1 in its --info line cannot use the original
+    mtp.safetensors (it drafts nothing the target accepts): the Unsloth Q8_0 file beside it is passed instead, and with none the run starts without a
+    drafter. The file stays on disk, and a newer engine (the GUI engine picker) takes it again at the next start."""
+    from strata_control import inkling_family
+    if not info or "--dspark" not in args:
+        return args, info
+    i = args.index("--dspark")
+    if i + 1 >= len(args):
+        return args, info
+    path = Path(str(args[i + 1]))
+    if path.name.lower() != inkling_family.MTP_FILE or inkling_family.engine_reads_mtp(info):
+        return args, info
+    out = list(args)
+    alt = path.with_name(inkling_family.DSPARK_GGUF_FILE)
+    if alt.is_file():
+        out[i + 1] = str(alt)
+        if announce:
+            print(f"[strata] this engine cannot read {inkling_family.MTP_FILE}; the drafter {alt.name} is used", flush=True)
+        return out, info
+    del out[i:i + 2]
+    if announce:
+        print(f"[strata] this engine cannot read {inkling_family.MTP_FILE} and there is no {alt.name} beside it: starting without the drafter", flush=True)
+    return out, {**info, "drafter": "none"}
 
 
 def engine_args(cfg: dict, exe: str | None = None, *, announce: bool = True) -> list[str]:
-    """Build start args for `strata-inkling`, preserving `--parallel 1..64`, `--max-context`, `--vision`, and `--draft dspark`."""
+    """Build start args for `strata-inkling`, preserving `--parallel 1..64`, `--max-context`, `--vision`,
+    Main-first `--gpus` + `--layer-split`, and `--draft dspark|off`."""
     from strata_control import inkling_family, user_args
     args = list(cfg["args"])
     mine = user_args.capture(cfg)
     if mine:
         args = user_args.merge(args, mine)
+    # #6497: honor a configured CPU thread limit (`--pool-workers N`) on Inkling by translating it to `--threads N`.
+    if "--pool-workers" in args:
+        pw_val = None
+        out_args: list[str] = []
+        i = 0
+        while i < len(args):
+            if args[i] == "--pool-workers":
+                if i + 1 < len(args) and not str(args[i + 1]).startswith("--"):
+                    pw_val = str(args[i + 1])
+                    i += 2
+                else:
+                    i += 1
+            else:
+                out_args.append(args[i])
+                i += 1
+        args = out_args
+        if pw_val and pw_val.isdigit() and int(pw_val) > 0 and "--threads" not in args:
+            args += ["--threads", pw_val]
     # Propagate top-level cfg["parallel"] (1..64) into `--parallel <N>` when not explicitly in args
     par = cfg.get("parallel")
     if isinstance(par, int) and 1 <= par <= inkling_family.MAX_PARALLEL and "--parallel" not in args:
         if par > 1:
             args += ["--parallel", str(par)]
-    # Propagate 2-GPU selection (`cfg["gpu"] = [0, 1]`) into `--gpus 2` for dual-GPU Expert Parallelism
-    gpu_cfg = cfg.get("gpu")
-    if isinstance(gpu_cfg, (list, tuple)) and len(gpu_cfg) >= 2 and "--gpus" not in args:
-        args += ["--gpus", str(min(2, len(gpu_cfg)))]
+    # Propagate 2..4 GPU selection (`cfg["gpu"]` or `gpu_roles`) into Main-first `--gpus` and `--layer-split` (#6592, #6631).
+    # child_env() exposes GPUs in Helper..Main order, so local ordinal N-1 is Main and 0..N-2 are Helpers;
+    # strata-inkling puts gpu_ids[0] as primary GPU, so pass Main first (`1,0`, `2,0,1`, `3,0,1,2`).
+    from serve.server_parts.engines import gpu_list
+    n_gpus = len(gpu_list(cfg))
+    is_cuda = cfg.get("backend") not in ("hip", "sycl", "metal", "cpu")
+    mine_flags = {str(a) for a in (mine or ()) if str(a).startswith("--")}
+    if n_gpus >= 2:
+        max_g = 4 if is_cuda else 2
+        local_spec = _local_gpu_ordinals(n_gpus, max_g)
+        if "--gpus" not in args:
+            args += ["--gpus", local_spec]
+        elif "--gpus" not in mine_flags:
+            at = args.index("--gpus")
+            if at + 1 < len(args) and "," not in str(args[at + 1]):
+                args[at + 1] = local_spec
+        if is_cuda and "--layer-split" not in args and "--ep-split" not in args:
+            args += ["--layer-split", str(cfg["layer_split"]) if cfg.get("layer_split") else "auto"]
+        # Drop single-GPU expert caps when running multi-GPU unless the user explicitly pinned them in user_args.
+        if "--vram-experts-gb" not in mine_flags:
+            args = _strip_flag(args, "--vram-experts-gb")
+        if "--ram-experts-gb" not in mine_flags:
+            args = _strip_flag(args, "--ram-experts-gb")
+    # strata-inkling reads --ram-experts-gb 0 as "no RAM tier, GPU + SSD only", but setup used to write 0.00 for a plan with every
+    # expert on the card: drop that 0 (unless the person set it, or the plan streams from the SSD) so experts that do not fit go to RAM
+    if "--ram-experts-gb" in args and "--ram-experts-gb" not in mine_flags and "--ssd-experts" not in args:
+        at = args.index("--ram-experts-gb")
+        try:
+            zero = at + 1 < len(args) and float(args[at + 1]) <= 0.0
+        except ValueError:
+            zero = False
+        if zero:
+            args = _strip_flag(args, "--ram-experts-gb")
     wants_images = "--vision" in args
-    need_draft = "--draft" not in args and wants_drafter(cfg)
+    want_draft = wants_drafter(cfg)
+    need_draft = "--draft" not in args and want_draft
     info = probe(exe, args, cfg) if (exe and (wants_images or need_draft)) else None
-    if need_draft:
+    args, info = fit_dspark(args, info, announce)
+    if "--draft" not in args and not want_draft:
+        args += ["--draft", "off"]
+    elif need_draft:
         add = drafter_args(cfg, info)
         args += add
         if not add and announce:
             print(f"[strata] {NO_DRAFTER_NOTE}", flush=True)
+    if announce and isinstance(cfg.get("drafting_probe"), dict):          # why drafting is on or off here, for /metrics and `strata launch --status`
+        from strata_control import inkling_family, inkling_probe
+        text = inkling_probe.note(cfg)
+        _NOTE["text"] = text
     if wants_images and (info or {}).get("images") != "1":
         at = args.index("--vision")
         del args[at:at + 2]
