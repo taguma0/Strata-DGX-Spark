@@ -5,9 +5,8 @@ Upstream is [Niko1221/Strata](https://github.com/Niko1221/Strata), kept as the `
 substantive deltas; this page is the file-by-file version of the same claim, so a reviewer can check them
 against the code instead of trusting the prose.
 
-204 files changed, 52621 insertions(+), 1600 deletions(-) as measured on 2026-11-26 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size; an earlier header measured against `upstream/main` directly, which quietly counted upstream's own post-base commits as fork delta - the regeneration commands now use the merge-base so that cannot recur). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **82 files (21 added, 44 modified, 17 deleted)** - files whose fork version
-differs from current upstream; a file byte-identical to `upstream/main` is not counted even when the
-merge-base diff lists it, because that entry is upstream's own post-base edit riding in through the fork.
+204 files changed, 52621 insertions(+), 1600 deletions(-) as measured on 2026-11-26 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **82 files (21 added, 44 modified, 17 deleted)** - files whose fork version differs from current
+upstream; the merge-base and byte-identical counting rules are in Regenerating this page.
 
 The sync direction never reverses: every upstream release is merged on top of the port (first landed in
 [`324b0ef`](https://github.com/taguma0/Strata-DGX-Spark/commit/324b0ef)); nothing from this fork is
@@ -40,8 +39,8 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   SDOT kernels for the IQ3_XXS and IQ4_NL gate/up rows. Bit-identical to the ggml dots they replace,
   1.26x (1 token) to 3.11x (4+) in isolation; end-to-end speed is unchanged because the expert windows are
   DRAM/GPU-bound ([A/B record](../bench/results/2026-10-29-iq3xxs-neon-ab/RESULTS.md)). They were weighed
-  against dropping them on 2026-11-19 and **kept** by the owner: the parity twins make them a free substitution
-  (bit-identical by construction), and they are the reference example of the parity-twin method this build applies to Arm i-quant rows.
+  against dropping them on 2026-11-19 and **kept** by the owner: the parity twins make them a free substitution,
+  and they are the reference example of the parity-twin method this build applies to Arm i-quant rows.
 - **Added** `engine/src/kernels/cpu/iq2xs_neon.cpp`, `iq2s_neon.cpp`, `iq3s_neon.cpp` (+parity twins) and the shared
   `engine/src/kernels/cpu/iq2_keven_signs.hpp` (2026-11-22): the IQ2_XS/IQ2_XXS/IQ2_S/IQ3_S gate/up rows on the same
   SDOT method (types 21/22/17/16), all four bit-identical to ggml-cpu at nt=1..8, each behind a kill switch
@@ -126,14 +125,11 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   serve config JSON (mechanics in the VRAM load gate section above).  The set is re-derived live, not read
   from docs: a symmetric diff of the `cfg.get(...)` key sets of the two `serve/server.py` (fork vs
   `~/Strata`, re-run 2026-11-26 against upstream v0.2.22 - a key the fork merely wires differently does not sneak in).  Enumerated:
-  - `"vram_need"`: the load gate's own line - a MiB number, or `"auto"` to price the model's own VRAM floor
-    once per start; the higher of this and `min_free_vram_mib` gates, a hand-set floor is never undercut.
-    No default (off).
+  - `"vram_need"`: the load gate's own line - a MiB number, or `"auto"` (gating mechanics above). No default (off).
   - `"load_wait_s"`: how long an unloaded model waits past the memory-settle wait for its line of free VRAM
     (0: `vram_free_wait_s` alone).  Default 0.
-  - `"evict_on_pressure"`: the pressure eviction's master switch - a load short on free VRAM asks the
-    machine's other strata servers to unload theirs first.  Off by default; with no line set it falls back
-    to `vram_need: "auto"` as the compared line, and `--offline` refuses profiles that set it.
+  - `"evict_on_pressure"`: the pressure eviction's master switch (off by default, `--offline` refuses it -
+    both above); with no line set it falls back to `vram_need: "auto"` as the compared line.
   - `"evict_peers"`: the servers to ask - `"http://host:port"` strings or objects `{"url", "api_key",
     "priority", "protect"}`; `protect: true` never gets asked.  Default: none named.
   - `"evict_discover"`: also find the machine's other `serve/server.py --port N` in `/proc` (Linux; empty
@@ -141,8 +137,7 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   - `"evict_order"`: `"idle"` (the peer idle longest first, by its own `/v1/status`
       `activity.last_request_at`) or `"priority"` (the config's `priority`, lower number first).
       Default `"idle"`.
-  - `"evict_grace_s"`: seconds a server refuses to ask back the peer that just unloaded it (the ping-pong
-    stop).  Default 60.
+  - `"evict_grace_s"`: the ask-back grace (the ping-pong stop above).  Default 60.
   Everything else the server reads from that file - `min_free_vram_mib`,
   `idle_unload_s`, `lazy_load`, `fit_max_tokens`, the `before_load` hooks - is upstream's.  The live diff's
   one candidate dropped on re-check: `layer_split` shows as fork-only only because the fork's
@@ -167,9 +162,8 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   drafter, Auto keeps the MTP. Upstream refuses Swift there (no acceptance numbers, MTP only); the fork's
   acceptance record is [docs/SWIFT-DF2-GB10-2026-11-04.md](SWIFT-DF2-GB10-2026-11-04.md) (gx10, 2026-11-04).
 - `terminal/tools/test_setup_*.py` (14): twelve carry one pin - `setup.ARM64 = False`, or the
-  `mock.patch.object` form in `test_setup_feed_engine` - "these tests describe an x86-64 PC whatever machine
-  runs them" (the CUDA repo URL picks sbsa on Arm, `cpu_floor`'s gate and the feed-engine path read the
-  global). The golden test also normalizes the host-derived `vision.threads` out of the recorded Unsloth
+  `mock.patch.object` form in `test_setup_feed_engine` - so they describe an x86-64 PC whatever machine
+  runs them (the CUDA repo URL, `cpu_floor`'s gate and the feed-engine path read the global from setup.py). The golden test also normalizes the host-derived `vision.threads` out of the recorded Unsloth
   UD-Q4_K_XL golden configs on non-WIN hosts; `test_setup_sycl`'s entire delta is dropping upstream's
   xe/i915 expert-profile ranking test.
 - `terminal/tests/terminal/test_drafting*.py` (2): not adaptations - behavior tests of `EXPERIMENTAL_FAMILIES`
@@ -180,8 +174,7 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   the `BENCH.bat` launcher) and failed with `FileNotFoundError` until the dead entries came out.
 - `terminal/serve/test_telemetry_intel.py`: the minimal-server CI fix - it asserted the bare `_Nvml` where the
   fork's `gpu_reader` hands out the GB10 wrapper `_Nvidia` (composition, not a subclass). The sibling fix on
-  `test_abort_sync.py`'s `sys.path` import is **no longer a delta**: upstream landed its own equivalent guard in
-  0.2.21 and the v0.2.21 merge converged both sides.
+  `test_abort_sync.py`'s `sys.path` import is no longer a delta (upstream landed its own guard in 0.2.21).
 
 ## App (3 files)
 
@@ -217,5 +210,5 @@ a `ctx_label` helper nothing had ever called (removed with the rest).
 `engine-feed/` download cache), `README.md` (the fork's intro rewrite and the DGX Spark section); and
 `tools/requant_dense_gguf.py` (**added**, requantizing the dense layers).
 
-The bench records this fork adds (55 folders of A/B and community evidence) are indexed separately:
-[docs/DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md).
+The counts above exclude the 55 bench-record folders (A/B and community evidence) this fork adds,
+indexed in the [bench records page](DGX_SPARK_BENCH_RECORDS.md) named at the top.
