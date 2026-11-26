@@ -16,6 +16,32 @@ Upstream runs on the Spark too: the official path is the Terminal with a ready-m
 ### How fast is it?
 
 Measured on one ASUS GX10 (a GB10 machine like the DGX Spark; GB10, 20 Arm cores, 121 GiB of memory shared by CPU
+and GPU), engine 0.1.69, model Qwen3.8 Flash Next UD IQ3_XXS (the run configuration as installed, measured over a
+suite-started serve, `--prefill auto:32768 --expert-cache 20480`), context 262,144 tokens, 3 runs per test,
+medians with ranges:
+
+| Test | Median | Range |
+| ---: | ---: | ---: |
+| Writing answers (chat) | **56.8 tokens/s** | 52.1-86.1 |
+| Chat first token | **0.45 s** | 0.41-0.50 s |
+| Reads a 4K prompt | **1,699 tokens/s** | 1,625-1,700 |
+| First token after a 4K prompt | **2.40 s** | 2.40-2.51 s |
+| Reads a 16K prompt | **2,153 tokens/s** | 2,111-2,156 |
+| First token after a 16K prompt | **7.50 s** | 7.49-7.65 s |
+| Agent session answers | **57.5 tokens/s** | 47.3-66.0 |
+| Agent conversation-cache hit | **70.2%** | 5 tokens re-read per session |
+
+- Chat and agent answers hold at **56-58 tokens/s** and prompt reading at 1,700/2,150 tokens/s from engine 0.1.62 to
+  0.1.69: the 0.2.20-0.2.22 release train brought **no regression** (the differences sit inside the run-to-run spread).
+- The first token after a fresh 16K prompt came down from 12.4 s (0.1.62) to **7.5 s** - the prompt-path fixes landed
+  through the releases; steady chat and agent answers are unchanged.
+- Full record with setup and caveats:
+  [docs/bench-results/2026-11-26-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs](docs/bench-results/2026-11-26-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs/README.md).
+
+<details>
+<summary>Earlier figures (engine 0.1.62, model Qwen3.8 Flash Next UD IQ3_XXS, measured 2026-11-19) - kept as history</summary>
+
+Measured on one ASUS GX10 (a GB10 machine like the DGX Spark; GB10, 20 Arm cores, 121 GiB of memory shared by CPU
 and GPU), engine 0.1.62, model Qwen3.8 Flash Next UD IQ3_XXS (the install's own configuration over a live serve,
 `--prefill auto:32768`), context 262,144 tokens, 3 runs per test, medians with ranges:
 
@@ -36,6 +62,7 @@ and GPU), engine 0.1.62, model Qwen3.8 Flash Next UD IQ3_XXS (the install's own 
   and agent answers are not affected.
 - Full record with setup and caveats:
   [docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4](docs/bench-results/2026-11-19-community-gb10-qwen3-8-flash-next-unsloth-ud-iq3-xxs-4/README.md).
+</details>
 
 <details>
 <summary>Earlier figures (engine 0.1.52, model swift-1.5-iq3_xxs, measured 2026-10-28) - kept as history</summary>
