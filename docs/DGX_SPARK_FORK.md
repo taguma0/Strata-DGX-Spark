@@ -5,7 +5,7 @@ Upstream is [Niko1221/Strata](https://github.com/Niko1221/Strata), kept as the `
 substantive deltas; this page is the file-by-file version of the same claim, so a reviewer can check them
 against the code instead of trusting the prose.
 
-150 files changed, 38066 insertions(+), 712 deletions(-) as measured on 2026-11-20 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size; an earlier header measured against `upstream/main` directly, which quietly counted upstream's own post-base commits as fork delta - the regeneration commands now use the merge-base so that cannot recur). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **63 files (11 added, 43 modified, 9 deleted)** - files whose fork version
+204 files changed, 52621 insertions(+), 1600 deletions(-) as measured on 2026-11-26 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size; an earlier header measured against `upstream/main` directly, which quietly counted upstream's own post-base commits as fork delta - the regeneration commands now use the merge-base so that cannot recur). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **82 files (21 added, 44 modified, 17 deleted)** - files whose fork version
 differs from current upstream; a file byte-identical to `upstream/main` is not counted even when the
 merge-base diff lists it, because that entry is upstream's own post-base edit riding in through the fork.
 
@@ -31,7 +31,7 @@ that is byte-identical to `upstream/main` (`git diff --quiet upstream/main main 
 is upstream's post-base edit being carried, not fork delta - the symmetric failure the merge-base rule does
 not catch.
 
-## Engine (15 files)
+## Engine (22 files)
 
 The Arm64 / GB10 kernel layer - the heart of the fork.
 
@@ -41,15 +41,28 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   1.26x (1 token) to 3.11x (4+) in isolation; end-to-end speed is unchanged because the expert windows are
   DRAM/GPU-bound ([A/B record](../bench/results/2026-10-29-iq3xxs-neon-ab/RESULTS.md)). They were weighed
   against dropping them on 2026-11-19 and **kept** by the owner: the parity twins make them a free substitution
-  (bit-identical by construction), and they are the only Arm i-quant tuning this build carries.
-- **Added** `engine/src/kernels/cpu/portable_stubs.cpp`: `ggml_fp16_to_fp32` and friends, needed because the
-  0.2.16 release engine no longer links `ggml-base`.
+  (bit-identical by construction), and they are the reference example of the parity-twin method this build applies to Arm i-quant rows.
+- **Added** `engine/src/kernels/cpu/iq2xs_neon.cpp`, `iq2s_neon.cpp`, `iq3s_neon.cpp` (+parity twins) and the shared
+  `engine/src/kernels/cpu/iq2_keven_signs.hpp` (2026-11-22): the IQ2_XS/IQ2_XXS/IQ2_S/IQ3_S gate/up rows on the same
+  SDOT method (types 21/22/17/16), all four bit-identical to ggml-cpu at nt=1..8, each behind a kill switch
+  (`STRATA_NO_IQ2XS` / `NO_IQ2S` / `NO_IQ3S`). The GB10 A/B (alternating fallback/kernel arms) is **decode-neutral**
+  (±0.2%); the kernels are kept on the branch for IQ2-pack coverage
+  ([A/B record](../bench/results/2026-11-22-q2-neon/RESULTS.md)).
+- **Added** `engine/src/kernels/cpu/portable_stubs.cpp`: `ggml_fp16_to_fp32`, the CPU-pool probe answers the ARM64
+  branch lacks when it compiles instead of upstream's generic non-x86 region (`cpu_gather_fast` and friends), and
+  the `x86_only` stand-ins that keep a missing AVX kernel linkable - needed because the 0.2.16 release engine no
+  longer links `ggml-base`.
 - **Modified** `engine/CMakeLists.txt`, `engine/cmake/backends/cpu.cmake`: build the NEON sources on Arm64 and leave
   the x86-only AVX-512/AVX-2 kernels out of the Arm build.
 - **Modified** `engine/src/kernels/cpu/native_expert.cpp`, `engine/src/kernels/cpu/expert_layout.cpp`,
   `engine/include/strata/kernels/cpu/expert.hpp`, `engine/include/strata/kernels/cpu/iq_avx2.hpp`,
   `engine/src/core/native_dense.cpp`, `engine/src/core/verify.cpp`: the i-quant rows' GB10 path - the NEON
-  include propagation, the f16 scale decode, and the dense-layer GB10 fixes.
+  include propagation, the f16 scale decode, and the dense-layer GB10 fixes. `native_expert.cpp` also carries the
+  permanent lane that makes `q8k_avx2()` return false under `#if defined(__aarch64__)`: the fork's
+  `expert_layout.cpp` Arm64 branch answers `cpu_avx2_ok()=true` (gating the NEON 256-bit kernels), which would
+  otherwise select the AVX-2 Q8_K activation quantizer - it links to a `portable_stubs.cpp` stand-in and aborts
+  the moment the CPU expert pool quantizes an activation, i.e. any expert cache below full (found 2026-11-23, the
+  `dgx-v0.2.19.1` fix, survives every merge).
 - **Modified** `engine/include/strata/platform/cpu_relax.hpp`: the aarch64 doorbell fences
   (`strata_store_fence` / `strata_load_fence`) became the full system barrier `dmb sy` (2026-11-20,
   27 sites in the shipped binary) instead of the tuned pair `dmb oshst` / `dmb ishld`. The survey of
@@ -70,8 +83,8 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
 
 - `terminal/serve/server.py` (the `vram_fit_start_need` wiring), `terminal/serve/server_parts/engines.py`,
   `terminal/strata_control/vram_fit.py` (+**added** `terminal/serve/test_vram_load_gate.py`,
-  `terminal/serve/test_evict_peers.py`, `terminal/serve/test_observed_vram.py`, **modified**
-  `terminal/serve/telemetry.py`): the model **load** gate.
+  `terminal/serve/test_evict_peers.py`, `terminal/serve/test_observed_vram.py`,
+  `terminal/serve/test_telemetry_unified.py`, **modified** `terminal/serve/telemetry.py`): the model **load** gate.
   `vram_need` raises the gate line above `min_free_vram_mib` - a number, or `"auto"`: `vram_fit.start_need_mib()`
   prices the model's own floor, and a start's **measured footprint** - the card's free VRAM around the start,
   kept under the engine-arguments hash in `strata-vram-observed.json` beside the engine's log - raises that
@@ -79,8 +92,11 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   alone is no footprint when `--expert-cache` fills eagerly: on this machine it priced 8.2 GiB where the pack
   takes ~54 GiB.  `load_wait_s` lets an unloaded model wait for the card to come back instead of failing
   (503 + `Retry-After` as before).  On GB10 the "free VRAM" the gate
-  waits on comes from the CUDA driver read `terminal/serve/telemetry.py` adds (`cuMemGetInfo`, cached),
-  NVML reporting no frame buffer at all on unified memory.
+  waits on comes from `terminal/serve/telemetry.py`'s unified card read: on a card whose total **is** the machine
+  RAM, `unified_used()` judges by `MemAvailable`, because the raw driver read (`cuMemGetInfo`, still cached and
+  still the reading for discrete frame buffers) counts the whole reclaimable page cache as used - on 2026-11-23 it
+  pinned 79.1 GiB "used" with 40 GiB of warm model page cache right there and every load timed out. NVML reports
+  no frame buffer at all on unified memory.
   The **unload** side stays upstream's - on this machine an unload is expensive (the 46.84 GiB GPU expert
   cache must be refilled; see the E2 entry above) - with one exception, the pressure eviction
   `evict_on_pressure` (its keys are enumerated in the Config JSON section): a gate short on free VRAM asks
@@ -109,7 +125,7 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
 - `vram_need`, `load_wait_s` and the five pressure-eviction keys are the **only** keys the fork adds to the
   serve config JSON (mechanics in the VRAM load gate section above).  The set is re-derived live, not read
   from docs: a symmetric diff of the `cfg.get(...)` key sets of the two `serve/server.py` (fork vs
-  `~/Strata`, re-run 2026-11-20 - a key the fork merely wires differently does not sneak in).  Enumerated:
+  `~/Strata`, re-run 2026-11-26 against upstream v0.2.22 - a key the fork merely wires differently does not sneak in).  Enumerated:
   - `"vram_need"`: the load gate's own line - a MiB number, or `"auto"` to price the model's own VRAM floor
     once per start; the higher of this and `min_free_vram_mib` gates, a hand-set floor is never undercut.
     No default (off).
@@ -136,7 +152,7 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   (`terminal/serve/runconfig.py`) - the `lazy_load` there is upstream's, the fork only routes its lazy wake
   through the VRAM gate.
 
-## Setup and tests (20 files)
+## Setup and tests (19 files)
 
 - `terminal/setup.py`: ARM64 detection as a test-overridable global (golden-style tests set `setup.ARM64 = False`
   to describe an x86 PC on any host - upstream reads `machine()` live and its tests carry no Arm handling, so
@@ -150,7 +166,7 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   vocabulary and experts layout) joins `EXPERIMENTAL_FAMILIES`: a start that NAMES `dflash2` runs the DFlash2
   drafter, Auto keeps the MTP. Upstream refuses Swift there (no acceptance numbers, MTP only); the fork's
   acceptance record is [docs/SWIFT-DF2-GB10-2026-11-04.md](SWIFT-DF2-GB10-2026-11-04.md) (gx10, 2026-11-04).
-- `terminal/tools/test_setup_*.py` (12): eleven carry one pin - `setup.ARM64 = False`, or the
+- `terminal/tools/test_setup_*.py` (14): twelve carry one pin - `setup.ARM64 = False`, or the
   `mock.patch.object` form in `test_setup_feed_engine` - "these tests describe an x86-64 PC whatever machine
   runs them" (the CUDA repo URL picks sbsa on Arm, `cpu_floor`'s gate and the feed-engine path read the
   global). The golden test also normalizes the host-derived `vision.threads` out of the recorded Unsloth
@@ -162,11 +178,10 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
 - `terminal/tools/test_no_llama_download.py`, `terminal/tests/terminal/test_bench_standard.py`: fallout fixes
   for the Removed-from-upstream pass below - both read a deleted file directly (the `backends.yml` workflow,
   the `BENCH.bat` launcher) and failed with `FileNotFoundError` until the dead entries came out.
-- `terminal/serve/test_telemetry_intel.py`, `terminal/serve/test_abort_sync.py`: the minimal-server CI fixes.
-  The first asserted the bare `_Nvml` where the fork's `gpu_reader` hands out the GB10 wrapper `_Nvidia`
-  (composition, not a subclass); the second imported `serve` in the one way the workflow's
-  `unittest discover` cannot resolve - upstream's own main fails that same import, and the fork now carries
-  the one-line `sys.path` guard its sibling serve tests already had.
+- `terminal/serve/test_telemetry_intel.py`: the minimal-server CI fix - it asserted the bare `_Nvml` where the
+  fork's `gpu_reader` hands out the GB10 wrapper `_Nvidia` (composition, not a subclass). The sibling fix on
+  `test_abort_sync.py`'s `sys.path` import is **no longer a delta**: upstream landed its own equivalent guard in
+  0.2.21 and the v0.2.21 merge converged both sides.
 
 ## App (3 files)
 
@@ -186,11 +201,12 @@ and the Japanese page follows upstream for free.  Upstream's own post-base edits
 supporters reworks, plus `SUPPORTERS.md` and `tools/docker/build.sh`) are four commits simply pending on the
 fork's side, not deltas.
 
-## Removed from upstream (9 files)
+## Removed from upstream (17 files)
 
 GitHub plumbing that does not run (or does not make sense) on a fork: the 4 `ISSUE_TEMPLATE` files,
-`pull_request_template.md`, and the `backends.yml`, `docs.yml`, `snapshot.yml` workflows; plus
-`tools/BENCH.bat`. Upstream remains the place to report issues. The deletions had fallout the first pass
+`pull_request_template.md`, the `backends.yml`, `docs.yml`, `snapshot.yml` and `intel-runner.yml` workflows,
+the seven scripts under `.github/ci/` (upstream's Inkling speed/chat harness, dropped when it arrived in the
+v0.2.21 merge), plus `tools/BENCH.bat`. Upstream remains the place to report issues. The deletions had fallout the first pass
 missed: two tests read the deleted files and broke (fixed as noted under Setup and tests), `setup.py`'s
 benchmark prompt offered the removed `BENCH.bat` (it names `./bench.sh` only now), and `vram_fit.py` carried
 a `ctx_label` helper nothing had ever called (removed with the rest).
@@ -201,5 +217,5 @@ a `ctx_label` helper nothing had ever called (removed with the rest).
 `engine-feed/` download cache), `README.md` (the fork's intro rewrite and the DGX Spark section); and
 `tools/requant_dense_gguf.py` (**added**, requantizing the dense layers).
 
-The bench records this fork adds (40 folders of A/B and community evidence) are indexed separately:
+The bench records this fork adds (55 folders of A/B and community evidence) are indexed separately:
 [docs/DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md).
