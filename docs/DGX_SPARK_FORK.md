@@ -5,7 +5,7 @@ Upstream is [Niko1221/Strata](https://github.com/Niko1221/Strata), kept as the `
 substantive deltas; this page is the file-by-file version of the same claim, so a reviewer can check them
 against the code instead of trusting the prose.
 
-204 files changed, 52635 insertions(+), 1600 deletions(-) as measured on 2026-11-27 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **82 files (21 added, 44 modified, 17 deleted)** - files whose fork version differs from current
+204 files changed, 52632 insertions(+), 1600 deletions(-) as measured on 2026-11-27 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **82 files (21 added, 44 modified, 17 deleted)** - files whose fork version differs from current
 upstream; the merge-base and byte-identical counting rules are in Regenerating this page.
 
 One-way sync: every upstream release is merged on top of the port; nothing goes back.  The ledger is a
@@ -115,9 +115,8 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
 ## Config JSON: the keys the fork adds (7)
 
 - `vram_need`, `load_wait_s` and the five pressure-eviction keys are the **only** keys the fork adds to the
-  serve config JSON (mechanics in the VRAM load gate section above).  The set is re-derived live, not read
-  from docs: a symmetric diff of the `cfg.get(...)` key sets of the two `serve/server.py` (fork vs
-  `~/Strata`, re-run 2026-11-26 against upstream v0.2.22 - a key the fork merely wires differently does not sneak in).  Enumerated:
+  serve config JSON (mechanics in the VRAM load gate section above; the set re-derived by a symmetric diff
+  of the `cfg.get(...)` key sets of the two `terminal/serve/server.py`, fork vs upstream).  Enumerated:
   - `"vram_need"`: the load gate's own line - a MiB number, or `"auto"` (gating mechanics above). No default (off).
   - `"load_wait_s"`: how long an unloaded model waits past the memory-settle wait for its line of free VRAM
     (0: `vram_free_wait_s` alone).  Default 0.
@@ -132,9 +131,7 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
       Default `"idle"`.
   - `"evict_grace_s"`: the ask-back grace (the ping-pong stop above).  Default 60.
   Everything else the server reads from that file - `min_free_vram_mib`,
-  `idle_unload_s`, `lazy_load`, `fit_max_tokens`, the `before_load` hooks - is upstream's.  The live diff's
-  one candidate dropped on re-check: `layer_split` shows as fork-only only because the fork's
-  `vram_fit_start_need` names it as a literal; the key itself is upstream's, read through `layer_split_of`.
+  `idle_unload_s`, `lazy_load`, `fit_max_tokens`, the `before_load` hooks - is upstream's.
   Adjacent, but not config keys: `STRATA_RUN_CONFIG_RO` is an environment
   variable (the read-only run config section above), and the fork adds **no** key to the run-config schema
   (`terminal/serve/runconfig.py`) - the `lazy_load` there is upstream's, the fork only routes its lazy wake
