@@ -34,14 +34,14 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   `engine/src/kernels/cpu/iq3xxs_neon_parity.cpp` / `iq4nl_neon_parity.cpp` twins: the two tuned
   SDOT kernels for the IQ3_XXS and IQ4_NL gate/up rows. Bit-identical to the ggml dots they replace,
   1.26x (1 token) to 3.11x (4+) in isolation; end-to-end speed is unchanged because the expert windows are
-  DRAM/GPU-bound ([A/B record](../bench/results/2026-10-29-iq3xxs-neon-ab/RESULTS.md)). They were weighed
-  against dropping them on 2026-11-19 and **kept** by the owner: the parity twins make them a free substitution,
-  and they are the reference example of the parity-twin method this build applies to Arm i-quant rows.
+  DRAM/GPU-bound ([A/B record](../bench/results/2026-10-29-iq3xxs-neon-ab/RESULTS.md)). They stay because
+  the parity twins make the swap free, behind the kill switches `STRATA_NO_IQ3XXS` / `STRATA_NO_IQ4NL`
+  (`native_expert.cpp`).
 - **Added** `engine/src/kernels/cpu/iq2xs_neon.cpp`, `iq2s_neon.cpp`, `iq3s_neon.cpp` (+parity twins) and the shared
   `engine/src/kernels/cpu/iq2_keven_signs.hpp` (2026-11-22): the IQ2_XS/IQ2_XXS/IQ2_S/IQ3_S gate/up rows on the same
   SDOT method (types 21/22/17/16), all four bit-identical to ggml-cpu at nt=1..8, each behind a kill switch
   (`STRATA_NO_IQ2XS` / `NO_IQ2S` / `NO_IQ3S`). The GB10 A/B (alternating fallback/kernel arms) is **decode-neutral**
-  (±0.2%); the kernels are kept on the branch for IQ2-pack coverage
+  (±0.2%); they stay enabled for IQ2-pack coverage
   ([A/B record](../bench/results/2026-11-22-q2-neon/RESULTS.md)).
 - **Added** `engine/src/kernels/cpu/portable_stubs.cpp`: `ggml_fp16_to_fp32`, the CPU-pool probe answers the ARM64
   branch lacks when it compiles instead of upstream's generic non-x86 region (`cpu_gather_fast` and friends), and
