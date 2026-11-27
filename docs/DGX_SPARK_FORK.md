@@ -5,7 +5,7 @@ Upstream is [Niko1221/Strata](https://github.com/Niko1221/Strata), kept as the `
 substantive deltas; this page is the file-by-file version of the same claim, so a reviewer can check them
 against the code instead of trusting the prose.
 
-204 files changed, 52621 insertions(+), 1600 deletions(-) as measured on 2026-11-26 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **82 files (21 added, 44 modified, 17 deleted)** - files whose fork version differs from current
+204 files changed, 52640 insertions(+), 1600 deletions(-) as measured on 2026-11-27 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **82 files (21 added, 44 modified, 17 deleted)** - files whose fork version differs from current
 upstream; the merge-base and byte-identical counting rules are in Regenerating this page.
 
 The sync direction never reverses: every upstream release is merged on top of the port (first landed in
@@ -22,13 +22,10 @@ git diff --shortstat "$MB" main
 git diff --name-status "$MB" main -- ':(exclude)bench/*' ':(exclude)docs/bench-results/*'
 ```
 
-The area lists below were written from the second command and the bench index from the third - re-derive
-both, do not hand-extend them, after a big upstream merge.  Diff against the merge-base, never against
-`upstream/main` itself: upstream commits the fork has not merged yet are not fork deltas, and the two-dot
-form silently counts them (that is how the 2026-11-19 ledger drifted).  Then drop from the list every file
-that is byte-identical to `upstream/main` (`git diff --quiet upstream/main main -- <path>`): its merge-base M
-is upstream's post-base edit being carried, not fork delta - the symmetric failure the merge-base rule does
-not catch.
+Regenerate the area lists and the bench index from the commands above - do not hand-extend them.  Use the
+merge-base, never `upstream/main`: the two-dot form counts upstream commits the fork has not merged yet
+(it drifted on 2026-11-19).  Then drop every file byte-identical to `upstream/main`
+(`git diff --quiet upstream/main main -- <path>`) - a carried post-base edit, not a fork delta.
 
 ## Engine (22 files)
 
@@ -190,9 +187,7 @@ drafter record on GB10), and this page with its bench index (`docs/DGX_SPARK_FOR
 `docs/DGX_SPARK_BENCH_RECORDS.md`).  All seven `docs/lang/` README translations the fork once rewrote now
 match upstream byte-for-byte - the last one, `docs/lang/README.ja.md`, was swapped to the upstream copy on
 2026-11-20, retiring the fork's Japanese intro: the Spark story stays in the English README and this page,
-and the Japanese page follows upstream for free.  Upstream's own post-base edits (dark-mode logo, two
-supporters reworks, plus `SUPPORTERS.md` and `tools/docker/build.sh`) are four commits simply pending on the
-fork's side, not deltas.
+and the Japanese page follows upstream for free.
 
 ## Removed from upstream (17 files)
 
