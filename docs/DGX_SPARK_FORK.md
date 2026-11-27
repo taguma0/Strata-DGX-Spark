@@ -5,7 +5,7 @@ Upstream is [Niko1221/Strata](https://github.com/Niko1221/Strata), kept as the `
 substantive deltas; this page is the file-by-file version of the same claim, so a reviewer can check them
 against the code instead of trusting the prose.
 
-204 files changed, 52637 insertions(+), 1600 deletions(-) as measured on 2026-11-27 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **82 files (21 added, 44 modified, 17 deleted)** - files whose fork version differs from current
+204 files changed, 52636 insertions(+), 1600 deletions(-) as measured on 2026-11-27 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **82 files (21 added, 44 modified, 17 deleted)** - files whose fork version differs from current
 upstream; the merge-base and byte-identical counting rules are in Regenerating this page.
 
 The sync direction never reverses: every upstream release is merged on top of the port (first landed in
@@ -182,9 +182,8 @@ the draft-layer sentences the fork's serve prints, mirrored in the app.
 `docs/VRAM_ELASTIC.md` (the load-gate additions), **added** `docs/SWIFT-DF2-GB10-2026-11-04.md` (the DF2
 drafter record on GB10), and this page with its bench index (`docs/DGX_SPARK_FORK.md`,
 `docs/DGX_SPARK_BENCH_RECORDS.md`).  All seven `docs/lang/` README translations the fork once rewrote now
-match upstream byte-for-byte - the last one, `docs/lang/README.ja.md`, was swapped to the upstream copy on
-2026-11-20, retiring the fork's Japanese intro: the Spark story stays in the English README and this page,
-and the Japanese page follows upstream for free.
+match upstream byte-for-byte - they follow upstream for free; the Spark story lives in the
+English README and this page.
 
 ## Removed from upstream (17 files)
 
