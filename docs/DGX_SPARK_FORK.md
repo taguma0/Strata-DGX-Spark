@@ -5,13 +5,12 @@ Upstream is [Niko1221/Strata](https://github.com/Niko1221/Strata), kept as the `
 substantive deltas; this page is the file-by-file version of the same claim, so a reviewer can check them
 against the code instead of trusting the prose.
 
-204 files changed, 52636 insertions(+), 1600 deletions(-) as measured on 2026-11-27 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **82 files (21 added, 44 modified, 17 deleted)** - files whose fork version differs from current
+204 files changed, 52635 insertions(+), 1600 deletions(-) as measured on 2026-11-27 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **82 files (21 added, 44 modified, 17 deleted)** - files whose fork version differs from current
 upstream; the merge-base and byte-identical counting rules are in Regenerating this page.
 
-The sync direction never reverses: every upstream release is merged on top of the port (first landed in
-[`324b0ef`](https://github.com/taguma0/Strata-DGX-Spark/commit/324b0ef)); nothing from this fork is
-assumed to go back. A commit-level log diff is deliberately *not* used as the ledger - releases arrive as
-cherry-picks, so `upstream/main..main` is mostly upstream's own authors.
+One-way sync: every upstream release is merged on top of the port; nothing goes back.  The ledger is a
+file diff, never a commit log - releases arrive as cherry-picks, so `upstream/main..main` is mostly
+upstream's own authors.
 
 ## Regenerating this page
 
