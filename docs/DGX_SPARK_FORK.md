@@ -5,7 +5,7 @@ Upstream is [Niko1221/Strata](https://github.com/Niko1221/Strata), kept as the `
 substantive deltas; this page is the file-by-file version of the same claim, so a reviewer can check them
 against the code instead of trusting the prose.
 
-204 files changed, 52640 insertions(+), 1600 deletions(-) as measured on 2026-11-27 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **82 files (21 added, 44 modified, 17 deleted)** - files whose fork version differs from current
+204 files changed, 52639 insertions(+), 1600 deletions(-) as measured on 2026-11-27 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **82 files (21 added, 44 modified, 17 deleted)** - files whose fork version differs from current
 upstream; the merge-base and byte-identical counting rules are in Regenerating this page.
 
 The sync direction never reverses: every upstream release is merged on top of the port (first landed in
@@ -59,14 +59,13 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   otherwise select the AVX-2 Q8_K activation quantizer - it links to a `portable_stubs.cpp` stand-in and aborts
   the moment the CPU expert pool quantizes an activation, i.e. any expert cache below full (found 2026-11-23, the
   `dgx-v0.2.19.1` fix, survives every merge).
-- **Modified** `engine/include/strata/platform/cpu_relax.hpp`: the aarch64 doorbell fences
-  (`strata_store_fence` / `strata_load_fence`) became the full system barrier `dmb sy` (2026-11-20,
-  27 sites in the shipped binary) instead of the tuned pair `dmb oshst` / `dmb ishld`. The survey of
-  `calvinvette/strata-inference-orin` found `dmb sy` at every doorbell - the Jetson builder hit the weak-ordering
-  window on real hardware and upstream carries neither fence family. `oshst`/`ishld` is the right tuned pair for
-  a C2C-coherent GPU, but `sy` also orders against system-scope observers (non-coherent PCIe endpoints). Both
-  fences sit outside the spin loops - once per doorbell transition, tens of cycles - so no speed moved and the
-  served stream stayed bit-identical across the swap (the load's `slot 0 verified` parity check).
+- **Modified** `engine/include/strata/platform/cpu_relax.hpp`: the aarch64 doorbell fences use the full
+  system barrier `dmb sy` where upstream (which owns the fence mechanism itself, its PR #1077 port) carries
+  the tuned `dmb oshst` / `dmb ishld` - a scope choice, re-countable via
+  `objdump -d terminal/engine/strata | grep -cE 'dmb\s+sy'` (29 on the 2026-11-26 build). The fences sit
+  outside the spin loops: no speed moved, the served stream stayed bit-identical across the swap
+  (`slot 0 verified`). The header comment carries the full rationale (the Jetson weak-ordering
+  precedent, the cost bound).
 - **Modified** `engine/src/program/generate.cpp` - **E2, model loading**: the mapped-read readahead
   (`advise_pairs`, `STRATA_FILL_AHEAD`, default 256) used to gate off for `--expert-cache-per-layer`, which is
   what the Spark config deploys, so the cold profile fill faulted 24,576 blobs serially at 587 MB/s (73.1 s;
