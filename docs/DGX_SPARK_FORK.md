@@ -5,7 +5,7 @@ Upstream is [Niko1221/Strata](https://github.com/Niko1221/Strata), kept as the `
 substantive deltas; this page is the file-by-file version of the same claim, so a reviewer can check them
 against the code instead of trusting the prose.
 
-204 files changed, 52639 insertions(+), 1600 deletions(-) as measured on 2026-11-27 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **82 files (21 added, 44 modified, 17 deleted)** - files whose fork version differs from current
+204 files changed, 52637 insertions(+), 1600 deletions(-) as measured on 2026-11-27 against the merge-base with upstream (the page measures itself, so a docs edit shifts the insertion count by its own size). The benchmark records under `bench/results/` and `docs/bench-results/` are indexed in [DGX_SPARK_BENCH_RECORDS.md](DGX_SPARK_BENCH_RECORDS.md); the code-and-docs delta is **82 files (21 added, 44 modified, 17 deleted)** - files whose fork version differs from current
 upstream; the merge-base and byte-identical counting rules are in Regenerating this page.
 
 The sync direction never reverses: every upstream release is merged on top of the port (first landed in
@@ -56,9 +56,7 @@ The Arm64 / GB10 kernel layer - the heart of the fork.
   include propagation, the f16 scale decode, and the dense-layer GB10 fixes. `native_expert.cpp` also carries the
   permanent lane that makes `q8k_avx2()` return false under `#if defined(__aarch64__)`: the fork's
   `expert_layout.cpp` Arm64 branch answers `cpu_avx2_ok()=true` (gating the NEON 256-bit kernels), which would
-  otherwise select the AVX-2 Q8_K activation quantizer - it links to a `portable_stubs.cpp` stand-in and aborts
-  the moment the CPU expert pool quantizes an activation, i.e. any expert cache below full (found 2026-11-23, the
-  `dgx-v0.2.19.1` fix, survives every merge).
+  otherwise select the aborting AVX-2 Q8_K stand-in - the guard's code comment carries the full chain.
 - **Modified** `engine/include/strata/platform/cpu_relax.hpp`: the aarch64 doorbell fences use the full
   system barrier `dmb sy` where upstream (which owns the fence mechanism itself, its PR #1077 port) carries
   the tuned `dmb oshst` / `dmb ishld` - a scope choice, re-countable via
